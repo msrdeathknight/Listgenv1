@@ -19,7 +19,7 @@ jobs:
     name: Generate Resync and build APK
     runs-on: ubuntu-latest
     env:
-      GRADLE_VERSION: "8.6"               # سازگار با AGP 8.7.3
+      GRADLE_VERSION: "8.6"
       ANDROID_COMPILE_SDK: "35"
       ANDROID_BUILD_TOOLS: "35.0.0"
       VERSION_NAME: ${{ inputs.version_name || '1.0.0' }}
@@ -34,11 +34,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          # تنظیم JAVA_HOME به‌صورت صریح
           java-package: jdk
           architecture: x64
 
-      # تأیید نسخه Java (اختیاری)
       - name: Verify Java version
         run: java -version
 
@@ -57,7 +55,6 @@ jobs:
           set -euo pipefail
           mkdir -p app/src/main/java/com/resync/app app/src/main/res/values app/src/main/res/xml .github
 
-          # ---------- settings.gradle.kts ----------
           cat > settings.gradle.kts <<'EOF'
           pluginManagement {
               repositories { google(); mavenCentral(); gradlePluginPortal() }
@@ -70,7 +67,6 @@ jobs:
           include(":app")
           EOF
 
-          # ---------- build.gradle.kts (project) ----------
           cat > build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application") version "8.7.3" apply false
@@ -79,7 +75,6 @@ jobs:
           }
           EOF
 
-          # ---------- gradle.properties ----------
           cat > gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
           org.gradle.parallel=true
@@ -87,7 +82,6 @@ jobs:
           kotlin.code.style=official
           EOF
 
-          # ---------- app/build.gradle.kts ----------
           cat > app/build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application")
@@ -164,7 +158,6 @@ jobs:
           </manifest>
           EOF
 
-          # ---------- MainActivity.kt (ساده‌سازی شده و خطاهای احتمالی رفع شده) ----------
           cat > app/src/main/java/com/resync/app/MainActivity.kt <<'EOF'
           package com.resync.app
 
@@ -177,6 +170,7 @@ jobs:
           import androidx.compose.animation.*
           import androidx.compose.animation.core.spring
           import androidx.compose.animation.core.tween
+          import androidx.compose.foundation.isSystemInDarkTheme       // <-- ایمپورت اضافه شده
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.lazy.LazyColumn
           import androidx.compose.foundation.lazy.items
@@ -205,10 +199,11 @@ jobs:
           import java.time.LocalDate
           import kotlin.random.Random
 
+          // ----- Data classes -----
           data class Person(val name: String, val gender: String = "خانم")
           data class ScheduleRow(val person: Person, val date: LocalDate)
 
-          // ---------- Utilities ----------
+          // ----- Utilities -----
           fun loadPeople(prefs: android.content.SharedPreferences): List<Person> =
               prefs.getString("people", "")!!.split("\\u001e").filter { it.isNotBlank() }.map {
                   val x = it.split("\\u001f")
@@ -250,7 +245,7 @@ jobs:
               return "%04d/%02d/%02d".format(jy, jm, jd)
           }
 
-          // ---------- Main Activity ----------
+          // ----- Main Activity -----
           class MainActivity : ComponentActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
@@ -268,7 +263,6 @@ jobs:
               val context = LocalContext.current
               val prefs = remember { context.getSharedPreferences("resync", Context.MODE_PRIVATE) }
 
-              // استفاده از mutableStateOf به‌جای rememberSaveable برای سادگی
               var people by remember { mutableStateOf(loadPeople(prefs)) }
               var name by remember { mutableStateOf("") }
               var newGender by remember { mutableStateOf("خانم") }
@@ -413,7 +407,7 @@ jobs:
                       }
                   }
 
-                  // Dialogs
+                  // ----- Dialogs -----
                   if (bulkDialog) {
                       BulkDialog(
                           onDismiss = { bulkDialog = false },
@@ -886,19 +880,16 @@ jobs:
           }
           EOF
 
-      # ---------- Setup Gradle wrapper ----------
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
           cache-cleanup: always
 
-      # ---------- Build APKs ----------
       - name: Build debug and release APKs
         run: |
           ./gradlew --no-daemon --console=plain --stacktrace :app:assembleDebug :app:assembleRelease
 
-      # ---------- Upload artifacts ----------
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
@@ -908,9 +899,8 @@ jobs:
             app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
 
-      # ---------- Commit generated source ----------
       - name: Commit generated Android source
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore: generate Resync Android project (final fix)"
+          commit_message: "chore: generate Resync Android project (fixed import)"
           file_pattern: "settings.gradle.kts build.gradle.kts gradle.properties app gradlew gradlew.bat gradle"
