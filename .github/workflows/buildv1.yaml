@@ -36,14 +36,16 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
+      # Ubuntu hosted runners already provide ANDROID_HOME and command-line tools.
+      # Calling sdkmanager directly avoids the deprecated Node 20 setup-android action.
       - name: Install Android platform and accept licenses
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" "build-tools;${ANDROID_BUILD_TOOLS}"
+          set -euo pipefail
+          SDKMANAGER="$(find "${ANDROID_HOME}" -type f -name sdkmanager | head -n 1)"
+          test -n "${SDKMANAGER}"
+          yes | "${SDKMANAGER}" --licenses >/dev/null || true
+          "${SDKMANAGER}" "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" "build-tools;${ANDROID_BUILD_TOOLS}"
 
       - name: Create the complete Android project
         shell: bash
@@ -165,6 +167,7 @@ jobs:
           import androidx.compose.animation.shrinkVertically
           import androidx.compose.foundation.background
           import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.isSystemInDarkTheme
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.lazy.LazyColumn
           import androidx.compose.foundation.lazy.items
