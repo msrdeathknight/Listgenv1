@@ -24,15 +24,17 @@ jobs:
       ANDROID_BUILD_TOOLS: "35.0.0"
       VERSION_NAME: ${{ inputs.version_name || '1.0.0' }}
     steps:
+      # v5 actions run on the current GitHub-hosted Node runtime (Node 24).
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
+      # Do not enable Gradle caching here: this workflow intentionally creates
+      # the Gradle project in a later step, so no Gradle files exist yet.
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
