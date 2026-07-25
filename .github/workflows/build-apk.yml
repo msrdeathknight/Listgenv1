@@ -58,7 +58,99 @@ jobs:
           mkdir -p "$B"/app/src/main/java/com/resync/scheduler
           mkdir -p "$B"/app/src/main/res/layout
           mkdir -p "$B"/app/src/main/res/values
+          mkdir -p "$B"/app/src/main/res/drawable
+          mkdir -p "$B"/app/src/main/res/mipmap-anydpi-v26
+          mkdir -p "$B"/app/src/main/res/mipmap-hdpi
+          mkdir -p "$B"/app/src/main/res/mipmap-mdpi
+          mkdir -p "$B"/app/src/main/res/mipmap-xhdpi
+          mkdir -p "$B"/app/src/main/res/mipmap-xxhdpi
+          mkdir -p "$B"/app/src/main/res/mipmap-xxxhdpi
           mkdir -p "$B"/app/src/main/assets
+
+          # ── Generate launcher icons with Python ──
+          python3 << 'PYICON'
+          import os, struct, zlib
+
+          def make_png(w, h, r, g, b):
+              """Generate a minimal valid PNG of size w×h filled with color (r,g,b)."""
+              def chunk(ctype, data):
+                  c = ctype + data
+                  return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+
+              raw = b''
+              for y in range(h):
+                  raw += b'\x00'  # filter: none
+                  for x in range(w):
+                      raw += struct.pack('BBB', r, g, b)
+
+              return (b'\x89PNG\r\n\x1a\n' +
+                      chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) +
+                      chunk(b'IDAT', zlib.compress(raw)) +
+                      chunk(b'IEND', b''))
+
+          base = os.environ.get('GITHUB_WORKSPACE', '.')
+          res = os.path.join(base, 'app/src/main/res')
+
+          # Create a simple rounded-square-look foreground drawable XML
+          drawable = os.path.join(res, 'drawable')
+          os.makedirs(drawable, exist_ok=True)
+
+          # Background layer (solid dark gray)
+          with open(os.path.join(drawable, 'ic_launcher_background.xml'), 'w') as f:
+              f.write('<?xml version="1.0" encoding="utf-8"?>\n<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><solid android:color="#1A1A1A"/></shape>\n')
+
+          # Foreground layer (white dice emoji-style icon using vector)
+          with open(os.path.join(drawable, 'ic_launcher_foreground.xml'), 'w') as f:
+              f.write('''<?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <!-- Dice cube -->
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M34,30 L74,30 L74,70 L34,70 Z"/>
+              <path
+                  android:fillColor="#E0E0E0"
+                  android:pathData="M34,30 L44,20 L84,20 L74,30 Z"/>
+              <path
+                  android:fillColor="#C0C0C0"
+                  android:pathData="M74,30 L84,20 L84,60 L74,70 Z"/>
+              <!-- Dot top-left -->
+              <path android:fillColor="#1A1A1A"
+                  android:pathData="M44,40 A5,5 0 1,1 44,40.01 Z"/>
+              <!-- Dot center -->
+              <path android:fillColor="#1A1A1A"
+                  android:pathData="M54,50 A5,5 0 1,1 54,50.01 Z"/>
+              <!-- Dot bottom-right -->
+              <path android:fillColor="#1A1A1A"
+                  android:pathData="M64,60 A5,5 0 1,1 64,60.01 Z"/>
+          </vector>''')
+
+          # Adaptive icon XML for API 26+
+          mipmap_anydpi = os.path.join(res, 'mipmap-anydpi-v26')
+          os.makedirs(mipmap_anydpi, exist_ok=True)
+          with open(os.path.join(mipmap_anydpi, 'ic_launcher.xml'), 'w') as f:
+              f.write('''<?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@drawable/ic_launcher_background"/>
+              <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+          </adaptive-icon>''')
+
+          # Generate PNG fallback icons for pre-API-26 (each density)
+          densities = {
+              'mdpi':   48,  'hdpi':   72,  'xhdpi':  96,
+              'xxhdpi': 144, 'xxxhdpi': 192
+          }
+          for density, size in densities.items():
+              folder = os.path.join(res, f'mipmap-{density}')
+              os.makedirs(folder, exist_ok=True)
+              # Generate a simple rounded dice icon PNG (dark bg with white dice)
+              png = make_png(size, size, 26, 26, 26)  # dark gray #1A1A1A
+              png_path = os.path.join(folder, 'ic_launcher.png')
+              with open(png_path, 'wb') as f:
+                  f.write(png)
+
+          print(f"✅ Launcher icons generated for all densities")
 
           # ── settings.gradle ──
           cat > "$B"/settings.gradle << 'EOF'
@@ -103,9 +195,8 @@ jobs:
               }
               buildTypes {
                   release {
-                      minifyEnabled true
-                      shrinkResources true
-                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                      minifyEnabled false
+                      shrinkResources false
                   }
                   debug {
                       applicationIdSuffix ".debug"
@@ -119,14 +210,6 @@ jobs:
           }
           EOF
 
-          # ── proguard ──
-          cat > "$B"/app/proguard-rules.pro << 'EOF'
-          -keepclassmembers class com.resync.scheduler.MainActivity$WebAppInterface {
-              @android.webkit.JavascriptInterface <methods>;
-          }
-          -keep class com.resync.scheduler.MainActivity { *; }
-          EOF
-
           # ── AndroidManifest ──
           cat > "$B"/app/src/main/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -135,6 +218,7 @@ jobs:
               <uses-permission android:name="android.permission.INTERNET" tools:node="remove"/>
               <application
                   android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
                   android:label="@string/app_name"
                   android:supportsRtl="true"
                   android:hardwareAccelerated="true"
@@ -155,7 +239,7 @@ jobs:
           </manifest>
           EOF
 
-          # ── res xml files ──
+          # ── res files ──
           cat > "$B"/app/src/main/res/values/strings.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources><string name="app_name">لیست ساز هوشمند</string></resources>
@@ -165,8 +249,6 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <color name="md_surface">#FFFBFBFB</color>
-              <color name="md_surface_container">#FFF0F0F0</color>
-              <color name="md_on_surface">#FF1A1A1A</color>
               <color name="md_primary">#FF1A1A1A</color>
           </resources>
           EOF
@@ -288,7 +370,7 @@ jobs:
 
           echo "✅ Java & XML files written. Writing HTML..."
 
-          # ── app.html (single heredoc, quoted to prevent shell expansion) ──
+          # ── app.html ──
           cat > "$B"/app/src/main/assets/app.html << 'HTMLEOF'
           <!DOCTYPE html>
           <html lang="fa" dir="rtl">
@@ -475,9 +557,9 @@ jobs:
           echo "📁 Files:"
           find . -type f -not -path './.git/*' | sort
 
-      # ──────────────────────────────────────────
-      # 6. Build APK
-      # ──────────────────────────────────────────
+      # ───────────────────────────────
+      # Build APK
+      # ───────────────────────────────
       - name: 🏗️ Build ${{ github.event.inputs.build_type || 'release' }} APK
         run: |
           BT="${{ github.event.inputs.build_type || 'release' }}"
@@ -488,51 +570,22 @@ jobs:
             gradle assembleDebug --no-daemon --console=plain
           fi
 
-      # ──────────────────────────────────────────
-      # 7. Sign APK (optional)
-      # ──────────────────────────────────────────
-      - name: 🔐 Sign Release APK
-        if: ${{ (github.event.inputs.build_type || 'release') == 'release' }}
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          UNSIGNED="app/build/outputs/apk/release/app-release-unsigned.apk"
-          SIGNED="app/build/outputs/apk/release/app-release.apk"
-          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
-            echo "🔐 Signing..."
-            echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
-            $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
-              --ks release.keystore \
-              --ks-pass pass:"$KEYSTORE_PASSWORD" \
-              --key-pass pass:"${KEY_PASSWORD:-$KEYSTORE_PASSWORD}" \
-              --ks-key-alias "${KEY_ALIAS:-resync}" \
-              --out "$SIGNED" "$UNSIGNED"
-            $ANDROID_HOME/build-tools/34.0.0/apksigner verify "$SIGNED"
-            echo "✅ Signed!"
-          else
-            echo "⚠️ No keystore — copying unsigned"
-            cp "$UNSIGNED" "$SIGNED"
-          fi
-
-      # ──────────────────────────────────────────
-      # 8. Rename & Upload
-      # ──────────────────────────────────────────
+      # ───────────────────────────────
+      # Upload APK
+      # ───────────────────────────────
       - name: 📤 Upload APK
         run: |
           BT="${{ github.event.inputs.build_type || 'release' }}"
           TS=$(date +%Y%m%d_%H%M%S)
           if [ "$BT" = "release" ]; then
-            SRC="app/build/outputs/apk/release/app-release.apk"
+            SRC="app/build/outputs/apk/release/app-release-unsigned.apk"
           else
             SRC="app/build/outputs/apk/debug/app-debug.apk"
           fi
           NAME="ResyncScheduler_${BT}_${TS}.apk"
           cp "$SRC" "$NAME"
           echo "APK=$NAME" >> $GITHUB_ENV
-          echo "✅ APK: $NAME ($(du -h $NAME | cut -f1))"
+          echo "✅ APK: $NAME  ($(du -h $NAME | cut -f1))"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -540,9 +593,9 @@ jobs:
           path: ${{ env.APK }}
           retention-days: 30
 
-      # ──────────────────────────────────────────
-      # 9. GitHub Release
-      # ──────────────────────────────────────────
+      # ───────────────────────────────
+      # GitHub Release (push to main)
+      # ───────────────────────────────
       - name: 🚀 Release
         if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (github.event.inputs.build_type || 'release') == 'release' }}
         uses: softprops/action-gh-release@v2
@@ -551,10 +604,13 @@ jobs:
           name: "📱 v${{ github.run_number }}"
           body: |
             ## 🎲 Resync Scheduler
-            
+
             کاملاً **آفلاین** | Material Design 3 Expressive
-            
-            دانلود و نصب روی اندروید.
+
+            ### نصب
+            ۱. APK را دانلود کنید  
+            ۲. روی گوشی اندروید نصب کنید  
+            ۳. برنامه بدون اینترنت کار می‌کند
           files: ${{ env.APK }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
