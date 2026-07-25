@@ -199,18 +199,15 @@ jobs:
           import java.time.LocalDate
           import kotlin.random.Random
 
-          // ---------- Data ----------
           data class Person(val name: String, val gender: String = "خانم")
           data class ScheduleRow(val person: Person, val date: LocalDate)
 
-          // ---------- Utilities ----------
           fun loadPeople(prefs: android.content.SharedPreferences): List<Person> =
               prefs.getString("people", "")!!.split("\\u001e").filter { it.isNotBlank() }.map {
                   val x = it.split("\\u001f")
                   Person(x[0], x.getOrElse(1) { "خانم" })
               }
 
-          // اصلاح تابع ordinal برای پوشش اعداد ۱ تا ۱۰۰
           fun ordinal(n: Int): String {
               return when (n) {
                   1 -> "اول"
@@ -285,7 +282,6 @@ jobs:
               return "%04d/%02d/%02d".format(jy, jm, jd)
           }
 
-          // ---------- Main Activity ----------
           class MainActivity : ComponentActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
@@ -303,7 +299,6 @@ jobs:
               val context = LocalContext.current
               val prefs = remember { context.getSharedPreferences("resync", Context.MODE_PRIVATE) }
 
-              // State
               var people by remember { mutableStateOf(loadPeople(prefs)) }
               var name by remember { mutableStateOf("") }
               var newGender by remember { mutableStateOf("خانم") }
@@ -507,7 +502,6 @@ jobs:
               }
           }
 
-          // ---------- صفحه اول: مدیریت افراد ----------
           @Composable
           fun PeopleScreen(
               people: List<Person>,
@@ -531,7 +525,7 @@ jobs:
                   LazyColumn(
                       modifier = Modifier
                           .fillMaxSize()
-                          .padding(bottom = 100.dp) // فضا برای نوار پایین
+                          .padding(bottom = 100.dp)
                           .padding(horizontal = 16.dp),
                       verticalArrangement = Arrangement.spacedBy(12.dp)
                   ) {
@@ -619,11 +613,9 @@ jobs:
                               }
                           }
                       }
-                      // فضای خالی برای اینکه لیست زیر نوار نرود
                       item { Spacer(Modifier.height(16.dp)) }
                   }
 
-                  // نوار پایین (مثل پیام‌رسان)
                   Surface(
                       modifier = Modifier
                           .align(Alignment.BottomCenter)
@@ -687,7 +679,6 @@ jobs:
               }
           }
 
-          // ---------- آیتم شخص ----------
           @Composable
           fun PersonItem(person: Person, onEdit: () -> Unit, onDelete: () -> Unit) {
               AnimatedVisibility(
@@ -738,7 +729,8 @@ jobs:
               }
           }
 
-          // ---------- صفحه دوم: تنظیمات + خروجی ----------
+          // اصلاح: اضافه کردن OptIn برای ExperimentalAnimationApi
+          @OptIn(ExperimentalAnimationApi::class)
           @Composable
           fun SettingsOutputScreen(
               people: List<Person>,
@@ -765,7 +757,6 @@ jobs:
                   modifier = Modifier.fillMaxSize().padding(16.dp),
                   verticalArrangement = Arrangement.spacedBy(16.dp)
               ) {
-                  // ----- بخش بالا: تنظیمات -----
                   item {
                       Card(
                           modifier = Modifier.animateContentSize(),
@@ -831,7 +822,7 @@ jobs:
                               }
                               if (people.isEmpty()) {
                                   AssistChip(
-                                      onClick = { /* بازگشت به صفحه اول */ },
+                                      onClick = { /* بازگشت */ },
                                       label = { Text("ابتدا افراد را اضافه کنید") },
                                       leadingIcon = { Icon(Icons.Default.Warning, null) },
                                       colors = AssistChipDefaults.assistChipColors(
@@ -844,7 +835,6 @@ jobs:
                       }
                   }
 
-                  // ----- بخش وسط: پیش‌نمایش خروجی -----
                   item {
                       AnimatedContent(
                           targetState = rows,
@@ -893,7 +883,6 @@ jobs:
                       }
                   }
 
-                  // ----- بخش پایین: دکمه‌های عملیاتی -----
                   item {
                       Row(
                           modifier = Modifier.fillMaxWidth(),
@@ -939,7 +928,6 @@ jobs:
               }
           }
 
-          // ---------- Dialogs ----------
           @Composable
           fun BulkDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
               var text by remember { mutableStateOf("") }
@@ -1018,5 +1006,5 @@ jobs:
       - name: Commit generated Android source
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore: redesign with two-step flow, fixed ordinals, enhanced animations"
+          commit_message: "chore: add OptIn for ExperimentalAnimationApi"
           file_pattern: "settings.gradle.kts build.gradle.kts gradle.properties app gradlew gradlew.bat gradle"
