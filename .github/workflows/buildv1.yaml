@@ -5,7 +5,7 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch:  # امکان اجرای دستی
+  workflow_dispatch:
 
 jobs:
   build:
@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: 18
 
-      - name: ☕ Setup Java (برای Android SDK)
+      - name: ☕ Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -29,7 +29,7 @@ jobs:
       - name: 📱 Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: 🧹 Install Capacitor & dependencies
+      - name: 🧹 Install Capacitor
         run: |
           npm install -g @capacitor/cli @capacitor/core
           npm install @capacitor/android
@@ -39,23 +39,23 @@ jobs:
           npx cap init "لیست ساز" "com.resync.listsaz" --web-dir=./www
           npx cap add android
 
-      - name: 📄 Copy HTML/JS/CSS assets to Capacitor web directory
+      - name: 📄 Copy index.html to Capacitor web directory
         run: |
-          mkdir -p www
-          # کپی تمام فایل‌های مورد نیاز (index.html، فایل‌های css، js، fonts و ...)
-          cp -r ./* www/ 2>/dev/null || true
-          # حذف فایل‌های غیرضروری مانند .git, .github, node_modules
-          rm -rf www/.git www/.github www/node_modules www/android www/www 2>/dev/null || true
+          # بررسی وجود فایل اصلی
+          if [ ! -f index.html ]; then
+            echo "❌ index.html پیدا نشد!"
+            exit 1
+          fi
+          # جایگزینی فایل پیش‌فرض با فایل پروژه
+          cp index.html www/
 
-      - name: ⚙️ Configure Capacitor for Android
+      - name: ⚙️ Configure Capacitor (اختیاری)
         run: |
-          # تنظیمات اضافی در capacitor.config.json (اختیاری)
           cat > capacitor.config.json <<EOF
           {
             "appId": "com.resync.listsaz",
             "appName": "لیست ساز حرفه‌ای",
             "webDir": "www",
-            "bundledWebRuntime": false,
             "android": {
               "allowMixedContent": true,
               "captureInput": true
@@ -73,7 +73,7 @@ jobs:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           JAVA_HOME: ${{ env.JAVA_HOME }}
 
-      - name: 📦 Upload APK as artifact
+      - name: 📦 Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Listsaz-APK
