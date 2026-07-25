@@ -1,9 +1,7 @@
-name: Build Android APK
+name: Build Android APK from Scratch
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
     branches: [ main, master ]
   workflow_dispatch:
 
@@ -12,70 +10,1119 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🔧 Setup Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: ☕ Setup Java
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: 'zulu'
           java-version: '17'
 
-      - name: 📱 Setup Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: 🧹 Install Capacitor
-        run: |
-          npm install -g @capacitor/cli @capacitor/core
-          npm install @capacitor/android
+      - name: Install Capacitor
+        run: npm install -g @capacitor/cli @capacitor/core @capacitor/android
 
-      - name: 🏗️ Create Capacitor project
+      - name: Create web application files
         run: |
-          npx cap init "لیست ساز" "com.resync.listsaz" --web-dir=./www
-          npx cap add android
+          # ایجاد پوشه‌های لازم (در صورت نیاز)
+          mkdir -p assets
 
-      - name: 📄 Copy index.html to Capacitor web directory
-        run: |
-          # بررسی وجود فایل اصلی
-          if [ ! -f index.html ]; then
-            echo "❌ index.html پیدا نشد!"
-            exit 1
-          fi
-          # جایگزینی فایل پیش‌فرض با فایل پروژه
-          cp index.html www/
+          # ---------- index.html ----------
+          cat > index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="fa" dir="rtl">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <title>نوبت‌دهی</title>
+            <!-- فونت ایران‌سنس (با وزن‌های مختلف) -->
+            <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" />
+            <!-- آیکون‌های Material Icons Outlined -->
+            <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0,1" rel="stylesheet" />
+            <link rel="stylesheet" href="style.css" />
+          </head>
+          <body>
+            <div id="app">
+              <!-- هدر -->
+              <header>
+                <div class="header-left">
+                  <span class="material-symbols-outlined">casino</span>
+                  <h1>نوبت‌دهی</h1>
+                  <span class="badge" id="countBadge">۰</span>
+                </div>
+                <button id="themeToggle" aria-label="تغییر تم" class="icon-btn">
+                  <span class="material-symbols-outlined">dark_mode</span>
+                </button>
+              </header>
 
-      - name: ⚙️ Configure Capacitor (اختیاری)
-        run: |
-          cat > capacitor.config.json <<EOF
-          {
-            "appId": "com.resync.listsaz",
-            "appName": "لیست ساز حرفه‌ای",
-            "webDir": "www",
-            "android": {
-              "allowMixedContent": true,
-              "captureInput": true
+              <!-- محتوای اصلی (اسکرول‌پذیر) -->
+              <main id="mainContent">
+                <!-- کارت لیست افراد -->
+                <section class="card" id="peopleCard">
+                  <div class="card-header">
+                    <h2>👥 لیست افراد</h2>
+                    <div class="card-actions">
+                      <button id="toggleListBtn" class="icon-btn" aria-label="نمایش/مخفی کردن لیست">
+                        <span class="material-symbols-outlined">visibility</span>
+                      </button>
+                      <button id="clearAllBtn" class="icon-btn" aria-label="حذف همه">
+                        <span class="material-symbols-outlined">delete_sweep</span>
+                      </button>
+                    </div>
+                  </div>
+                  <div id="peopleList" class="people-list"></div>
+                </section>
+
+                <!-- کارت تولید برنامه -->
+                <section class="card" id="scheduleCard">
+                  <div class="card-header">
+                    <h2>📅 تولید برنامه</h2>
+                  </div>
+                  <div class="schedule-form">
+                    <div class="form-row">
+                      <label for="startDate">تاریخ شروع (میلادی)</label>
+                      <input type="date" id="startDate" />
+                    </div>
+                    <div class="form-row">
+                      <label for="emojiInput">ایموجی</label>
+                      <input type="text" id="emojiInput" maxlength="4" value="💎" />
+                    </div>
+                    <button id="generateBtn" class="primary-btn">
+                      <span class="material-symbols-outlined">shuffle</span>
+                      تولید
+                    </button>
+                    <div class="action-buttons">
+                      <button id="copyBtn" class="secondary-btn">
+                        <span class="material-symbols-outlined">content_copy</span>
+                        کپی
+                      </button>
+                      <button id="downloadBtn" class="secondary-btn">
+                        <span class="material-symbols-outlined">download</span>
+                        دانلود
+                      </button>
+                    </div>
+                  </div>
+                  <div id="scheduleOutput" class="schedule-output"></div>
+                </section>
+              </main>
+
+              <!-- نوار پایین (ورودی نام) -->
+              <footer id="bottomBar">
+                <div class="input-row">
+                  <input type="text" id="nameInput" placeholder="نام را وارد کنید" autocomplete="off" />
+                  <select id="genderSelect">
+                    <option value="">—</option>
+                    <option value="خانم">خانم</option>
+                    <option value="آقا">آقا</option>
+                  </select>
+                  <button id="addBtn" class="icon-btn" aria-label="افزودن">
+                    <span class="material-symbols-outlined">add</span>
+                  </button>
+                </div>
+                <div class="bulk-row">
+                  <textarea id="bulkInput" placeholder="افزودن گروهی (با کاما یا خط جدید جدا کنید)"></textarea>
+                  <button id="bulkAddBtn" class="secondary-btn small">
+                    <span class="material-symbols-outlined">upload</span>
+                    گروهی
+                  </button>
+                </div>
+              </footer>
+            </div>
+
+            <!-- مودال ویرایش -->
+            <div id="editModal" class="modal" role="dialog" aria-modal="true">
+              <div class="modal-content">
+                <h3>ویرایش نام</h3>
+                <input type="text" id="editInput" />
+                <div class="modal-actions">
+                  <button id="editCancelBtn" class="secondary-btn">انصراف</button>
+                  <button id="editSaveBtn" class="primary-btn">ذخیره</button>
+                </div>
+              </div>
+            </div>
+
+            <script src="script.js"></script>
+          </body>
+          </html>
+          EOF
+
+          # ---------- style.css ----------
+          cat > style.css <<'EOF'
+          /* متغیرهای رنگی – تم روشن (پیش‌فرض) */
+          :root {
+            --md-sys-color-primary: #1a1a1a;
+            --md-sys-color-on-primary: #ffffff;
+            --md-sys-color-background: #f5f5f5;
+            --md-sys-color-surface: #ffffff;
+            --md-sys-color-on-surface: #1a1a1a;
+            --md-sys-color-surface-variant: #e0e0e0;
+            --md-sys-color-outline: #7a7a7a;
+            --md-sys-color-shadow: rgba(0,0,0,0.1);
+            --md-sys-color-error: #b00020;
+            --md-elevation-1: 0 2px 4px rgba(0,0,0,0.08);
+            --md-elevation-2: 0 4px 8px rgba(0,0,0,0.12);
+            --md-elevation-3: 0 8px 16px rgba(0,0,0,0.16);
+          }
+
+          /* تم تاریک */
+          @media (prefers-color-scheme: dark) {
+            :root {
+              --md-sys-color-primary: #e0e0e0;
+              --md-sys-color-on-primary: #1a1a1a;
+              --md-sys-color-background: #121212;
+              --md-sys-color-surface: #1e1e1e;
+              --md-sys-color-on-surface: #e0e0e0;
+              --md-sys-color-surface-variant: #2c2c2c;
+              --md-sys-color-outline: #9e9e9e;
+              --md-sys-color-shadow: rgba(0,0,0,0.4);
             }
           }
-          EOF
-          npx cap sync android
 
-      - name: 🔨 Build APK (Debug)
+          /* اعمال متغیرها روی المنت‌ها */
+          body {
+            margin: 0;
+            font-family: 'Vazirmatn', sans-serif;
+            background-color: var(--md-sys-color-background);
+            color: var(--md-sys-color-on-surface);
+            direction: rtl;
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+          }
+
+          #app {
+            max-width: 520px;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--md-sys-color-background);
+            position: relative;
+          }
+
+          /* هدر */
+          header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background-color: var(--md-sys-color-surface);
+            box-shadow: var(--md-elevation-1);
+            z-index: 10;
+            flex-shrink: 0;
+            border-bottom: 1px solid var(--md-sys-color-surface-variant);
+          }
+          .header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .header-left h1 {
+            font-size: 1.2rem;
+            margin: 0;
+          }
+          .badge {
+            background-color: var(--md-sys-color-primary);
+            color: var(--md-sys-color-on-primary);
+            border-radius: 12px;
+            padding: 0 8px;
+            font-size: 0.75rem;
+            line-height: 1.6;
+            min-width: 20px;
+            text-align: center;
+          }
+
+          /* دکمه‌های آیکونی */
+          .icon-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+            color: var(--md-sys-color-on-surface);
+          }
+          .icon-btn:hover {
+            background-color: var(--md-sys-color-surface-variant);
+            transform: scale(1.1);
+          }
+          .icon-btn:active {
+            transform: scale(0.9);
+          }
+          .icon-btn .material-symbols-outlined {
+            font-size: 24px;
+          }
+
+          /* محتوای اصلی (اسکرول) */
+          main {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 16px 80px; /* فضای پایین برای نوار bottom */
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+          }
+
+          /* کارت‌ها */
+          .card {
+            background-color: var(--md-sys-color-surface);
+            border-radius: 16px;
+            box-shadow: var(--md-elevation-1);
+            padding: 16px;
+            transition: box-shadow 0.3s;
+            animation: cardEntrance 0.4s ease-out;
+          }
+          .card:hover {
+            box-shadow: var(--md-elevation-2);
+          }
+          .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+          }
+          .card-header h2 {
+            margin: 0;
+            font-size: 1.1rem;
+          }
+          .card-actions {
+            display: flex;
+            gap: 4px;
+          }
+
+          /* لیست افراد */
+          .people-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+          }
+          .person-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background-color: var(--md-sys-color-surface-variant);
+            border-radius: 12px;
+            animation: listItemEntrance 0.3s ease-out both;
+            transition: all 0.2s;
+          }
+          .person-item:hover {
+            transform: scale(1.02);
+            box-shadow: var(--md-elevation-1);
+          }
+          .person-item .name {
+            font-weight: 500;
+            flex: 1;
+            margin-left: 8px;
+          }
+          .person-item .gender-badge {
+            font-size: 0.75rem;
+            background-color: var(--md-sys-color-primary);
+            color: var(--md-sys-color-on-primary);
+            padding: 0 8px;
+            border-radius: 10px;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s;
+            line-height: 1.8;
+          }
+          .person-item .gender-badge:hover {
+            transform: scale(1.1);
+          }
+          .person-item .item-actions {
+            display: flex;
+            gap: 2px;
+          }
+          .person-item .item-actions .icon-btn {
+            padding: 4px;
+          }
+          .person-item .item-actions .icon-btn .material-symbols-outlined {
+            font-size: 20px;
+          }
+
+          /* فرم تولید */
+          .schedule-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+          }
+          .form-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+          }
+          .form-row label {
+            font-size: 0.9rem;
+            font-weight: 500;
+          }
+          .form-row input {
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid var(--md-sys-color-outline);
+            background-color: var(--md-sys-color-surface-variant);
+            color: var(--md-sys-color-on-surface);
+            font-size: 1rem;
+            font-family: inherit;
+          }
+          .form-row input:focus {
+            outline: none;
+            border-color: var(--md-sys-color-primary);
+          }
+
+          .primary-btn, .secondary-btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 24px;
+            font-family: inherit;
+            font-size: 1rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+          }
+          .primary-btn {
+            background-color: var(--md-sys-color-primary);
+            color: var(--md-sys-color-on-primary);
+          }
+          .primary-btn:hover {
+            transform: scale(1.03);
+            box-shadow: var(--md-elevation-2);
+          }
+          .primary-btn:active {
+            transform: scale(0.97);
+          }
+          .secondary-btn {
+            background-color: var(--md-sys-color-surface-variant);
+            color: var(--md-sys-color-on-surface);
+          }
+          .secondary-btn:hover {
+            transform: scale(1.03);
+            box-shadow: var(--md-elevation-1);
+          }
+          .secondary-btn:active {
+            transform: scale(0.97);
+          }
+          .small {
+            padding: 6px 12px;
+            font-size: 0.85rem;
+            border-radius: 16px;
+          }
+
+          .action-buttons {
+            display: flex;
+            gap: 8px;
+          }
+          .action-buttons button {
+            flex: 1;
+          }
+
+          /* خروجی برنامه */
+          .schedule-output {
+            margin-top: 16px;
+            padding: 12px;
+            background-color: var(--md-sys-color-surface-variant);
+            border-radius: 12px;
+            min-height: 40px;
+          }
+          .schedule-item {
+            padding: 6px 0;
+            border-bottom: 1px solid var(--md-sys-color-outline);
+            animation: scheduleEntrance 0.3s ease-out both;
+          }
+          .schedule-item:last-child {
+            border-bottom: none;
+          }
+          .schedule-item b {
+            font-weight: 700;
+          }
+
+          /* نوار پایین */
+          footer#bottomBar {
+            position: sticky;
+            bottom: 0;
+            background-color: var(--md-sys-color-surface);
+            border-top: 1px solid var(--md-sys-color-surface-variant);
+            padding: 8px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex-shrink: 0;
+            box-shadow: var(--md-elevation-2);
+          }
+          .input-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+          }
+          .input-row input {
+            flex: 1;
+            padding: 10px 12px;
+            border-radius: 24px;
+            border: 1px solid var(--md-sys-color-outline);
+            background-color: var(--md-sys-color-surface-variant);
+            color: var(--md-sys-color-on-surface);
+            font-size: 1rem;
+            font-family: inherit;
+          }
+          .input-row input:focus {
+            outline: none;
+            border-color: var(--md-sys-color-primary);
+          }
+          .input-row select {
+            padding: 8px 12px;
+            border-radius: 24px;
+            border: 1px solid var(--md-sys-color-outline);
+            background-color: var(--md-sys-color-surface-variant);
+            color: var(--md-sys-color-on-surface);
+            font-family: inherit;
+            font-size: 0.9rem;
+          }
+          .bulk-row {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+          }
+          .bulk-row textarea {
+            flex: 1;
+            padding: 8px 12px;
+            border-radius: 16px;
+            border: 1px solid var(--md-sys-color-outline);
+            background-color: var(--md-sys-color-surface-variant);
+            color: var(--md-sys-color-on-surface);
+            font-family: inherit;
+            font-size: 0.9rem;
+            resize: vertical;
+            min-height: 40px;
+            max-height: 120px;
+            overflow-y: auto;
+          }
+          .bulk-row textarea:focus {
+            outline: none;
+            border-color: var(--md-sys-color-primary);
+          }
+
+          /* مودال */
+          .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            animation: fadeScale 0.2s ease-out;
+          }
+          .modal.active {
+            display: flex;
+          }
+          .modal-content {
+            background: var(--md-sys-color-surface);
+            padding: 24px;
+            border-radius: 24px;
+            max-width: 360px;
+            width: 90%;
+            box-shadow: var(--md-elevation-3);
+          }
+          .modal-content h3 {
+            margin-top: 0;
+          }
+          .modal-content input {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid var(--md-sys-color-outline);
+            background: var(--md-sys-color-surface-variant);
+            color: var(--md-sys-color-on-surface);
+            font-size: 1rem;
+            font-family: inherit;
+            box-sizing: border-box;
+          }
+          .modal-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+            justify-content: flex-end;
+          }
+
+          /* انیمیشن‌ها */
+          @keyframes cardEntrance {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes listItemEntrance {
+            0% { opacity: 0; transform: translateX(-10px); }
+            100% { opacity: 1; transform: translateX(0); }
+          }
+          @keyframes scheduleEntrance {
+            0% { opacity: 0; transform: translateY(10px); }
+            100% { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes fadeScale {
+            0% { opacity: 0; transform: scale(0.9); }
+            100% { opacity: 1; transform: scale(1); }
+          }
+
+          /* واکنش‌گرایی */
+          @media (max-width: 420px) {
+            header h1 { font-size: 1rem; }
+            .card { padding: 12px; }
+            .person-item { padding: 6px 10px; }
+            .input-row input, .input-row select { font-size: 0.9rem; padding: 8px 10px; }
+            .bulk-row textarea { font-size: 0.85rem; }
+          }
+          @media (max-width: 380px) {
+            header { padding: 8px 12px; }
+            main { padding: 8px 12px 70px; }
+            .card-header h2 { font-size: 0.95rem; }
+          }
+          EOF
+
+          # ---------- script.js ----------
+          cat > script.js <<'EOF'
+          // ------------------------------------------------------------
+          // برنامه نوبت‌دهی – تمام منطق
+          // ------------------------------------------------------------
+
+          (function() {
+            'use strict';
+
+            // --- داده‌ها ---
+            let names = [];            // [{ name, gender }]
+            let startDate = '';        // رشته تاریخ میلادی (YYYY-MM-DD)
+            let emoji = '💎';
+            let listVisible = true;
+            let theme = 'light';       // یا 'dark'
+
+            // --- عناصر DOM ---
+            const peopleListEl = document.getElementById('peopleList');
+            const countBadge = document.getElementById('countBadge');
+            const nameInput = document.getElementById('nameInput');
+            const genderSelect = document.getElementById('genderSelect');
+            const addBtn = document.getElementById('addBtn');
+            const bulkInput = document.getElementById('bulkInput');
+            const bulkAddBtn = document.getElementById('bulkAddBtn');
+            const toggleListBtn = document.getElementById('toggleListBtn');
+            const clearAllBtn = document.getElementById('clearAllBtn');
+            const startDateInput = document.getElementById('startDate');
+            const emojiInput = document.getElementById('emojiInput');
+            const generateBtn = document.getElementById('generateBtn');
+            const copyBtn = document.getElementById('copyBtn');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const scheduleOutput = document.getElementById('scheduleOutput');
+            const themeToggle = document.getElementById('themeToggle');
+            const editModal = document.getElementById('editModal');
+            const editInput = document.getElementById('editInput');
+            const editSaveBtn = document.getElementById('editSaveBtn');
+            const editCancelBtn = document.getElementById('editCancelBtn');
+
+            let editIndex = -1;
+
+            // --- توابع کمکی ---
+            function saveData() {
+              const data = { names, startDate, emoji, theme };
+              localStorage.setItem('scheduleAppData', JSON.stringify(data));
+              localStorage.setItem('scheduleAppTheme', theme);
+            }
+
+            function loadData() {
+              const saved = localStorage.getItem('scheduleAppData');
+              if (saved) {
+                try {
+                  const data = JSON.parse(saved);
+                  names = data.names || [];
+                  startDate = data.startDate || '';
+                  emoji = data.emoji || '💎';
+                  theme = data.theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+                } catch(e) {}
+              }
+              // بارگذاری تم
+              const savedTheme = localStorage.getItem('scheduleAppTheme');
+              if (savedTheme) theme = savedTheme;
+              applyTheme();
+              // تنظیم فیلدها
+              startDateInput.value = startDate;
+              emojiInput.value = emoji;
+            }
+
+            function applyTheme() {
+              if (theme === 'dark') {
+                document.documentElement.style.setProperty('--md-sys-color-primary', '#e0e0e0');
+                document.documentElement.style.setProperty('--md-sys-color-on-primary', '#1a1a1a');
+                document.documentElement.style.setProperty('--md-sys-color-background', '#121212');
+                document.documentElement.style.setProperty('--md-sys-color-surface', '#1e1e1e');
+                document.documentElement.style.setProperty('--md-sys-color-on-surface', '#e0e0e0');
+                document.documentElement.style.setProperty('--md-sys-color-surface-variant', '#2c2c2c');
+                document.documentElement.style.setProperty('--md-sys-color-outline', '#9e9e9e');
+                themeToggle.innerHTML = '<span class="material-symbols-outlined">light_mode</span>';
+              } else {
+                document.documentElement.style.setProperty('--md-sys-color-primary', '#1a1a1a');
+                document.documentElement.style.setProperty('--md-sys-color-on-primary', '#ffffff');
+                document.documentElement.style.setProperty('--md-sys-color-background', '#f5f5f5');
+                document.documentElement.style.setProperty('--md-sys-color-surface', '#ffffff');
+                document.documentElement.style.setProperty('--md-sys-color-on-surface', '#1a1a1a');
+                document.documentElement.style.setProperty('--md-sys-color-surface-variant', '#e0e0e0');
+                document.documentElement.style.setProperty('--md-sys-color-outline', '#7a7a7a');
+                themeToggle.innerHTML = '<span class="material-symbols-outlined">dark_mode</span>';
+              }
+              saveData();
+            }
+
+            // --- رندر لیست افراد ---
+            function renderPeople() {
+              if (!listVisible) {
+                peopleListEl.innerHTML = '<div style="text-align:center;color:var(--md-sys-color-outline);padding:12px;">لیست مخفی است</div>';
+                countBadge.textContent = names.length;
+                return;
+              }
+              if (names.length === 0) {
+                peopleListEl.innerHTML = '<div style="text-align:center;color:var(--md-sys-color-outline);padding:12px;">هیچ فردی ثبت نشده است</div>';
+                countBadge.textContent = '۰';
+                return;
+              }
+              let html = '';
+              names.forEach((p, i) => {
+                const genderLabel = p.gender || '—';
+                html += `
+                  <div class="person-item" style="animation-delay:${i * 0.03}s">
+                    <span class="name">${escapeHTML(p.name)}</span>
+                    <span class="gender-badge" data-index="${i}">${genderLabel}</span>
+                    <div class="item-actions">
+                      <button class="icon-btn edit-btn" data-index="${i}" aria-label="ویرایش">
+                        <span class="material-symbols-outlined">edit</span>
+                      </button>
+                      <button class="icon-btn delete-btn" data-index="${i}" aria-label="حذف">
+                        <span class="material-symbols-outlined">delete</span>
+                      </button>
+                    </div>
+                  </div>
+                `;
+              });
+              peopleListEl.innerHTML = html;
+              countBadge.textContent = names.length;
+
+              // رویدادهای دکمه‌ها
+              document.querySelectorAll('.edit-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                  const idx = parseInt(btn.dataset.index);
+                  openEditModal(idx);
+                });
+              });
+              document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                  const idx = parseInt(btn.dataset.index);
+                  removeName(idx);
+                });
+              });
+              document.querySelectorAll('.gender-badge').forEach(el => {
+                el.addEventListener('click', (e) => {
+                  const idx = parseInt(el.dataset.index);
+                  cycleGender(idx);
+                });
+              });
+            }
+
+            function escapeHTML(str) {
+              const div = document.createElement('div');
+              div.textContent = str;
+              return div.innerHTML;
+            }
+
+            // --- مدیریت افراد ---
+            function addName(name, gender) {
+              name = name.trim();
+              if (!name) return false;
+              // بررسی تکراری (مقایسه case-insensitive)
+              if (names.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+                alert('این نام قبلاً ثبت شده است.');
+                return false;
+              }
+              names.push({ name, gender: gender || '' });
+              saveData();
+              renderPeople();
+              scrollListToBottom();
+              return true;
+            }
+
+            function removeName(index) {
+              if (index < 0 || index >= names.length) return;
+              if (confirm(`آیا از حذف "${names[index].name}" مطمئنید؟`)) {
+                names.splice(index, 1);
+                saveData();
+                renderPeople();
+              }
+            }
+
+            function cycleGender(index) {
+              const genders = ['', 'خانم', 'آقا'];
+              const current = names[index].gender;
+              const nextIndex = (genders.indexOf(current) + 1) % genders.length;
+              names[index].gender = genders[nextIndex];
+              saveData();
+              renderPeople();
+            }
+
+            function openEditModal(index) {
+              editIndex = index;
+              editInput.value = names[index].name;
+              editModal.classList.add('active');
+              editInput.focus();
+              editInput.select();
+            }
+
+            function closeEditModal() {
+              editModal.classList.remove('active');
+              editIndex = -1;
+            }
+
+            function saveEdit() {
+              const newName = editInput.value.trim();
+              if (!newName) {
+                alert('نام نمی‌تواند خالی باشد.');
+                return;
+              }
+              // بررسی تکراری (به جز خودش)
+              if (names.some((p, i) => i !== editIndex && p.name.toLowerCase() === newName.toLowerCase())) {
+                alert('این نام قبلاً ثبت شده است.');
+                return;
+              }
+              names[editIndex].name = newName;
+              saveData();
+              renderPeople();
+              closeEditModal();
+            }
+
+            function clearAll() {
+              if (names.length === 0) return;
+              if (confirm('همه افراد حذف خواهند شد. ادامه می‌دهید؟')) {
+                names = [];
+                saveData();
+                renderPeople();
+              }
+            }
+
+            function toggleList() {
+              listVisible = !listVisible;
+              toggleListBtn.innerHTML = `<span class="material-symbols-outlined">${listVisible ? 'visibility' : 'visibility_off'}</span>`;
+              renderPeople();
+            }
+
+            function scrollListToBottom() {
+              const main = document.getElementById('mainContent');
+              main.scrollTop = main.scrollHeight;
+            }
+
+            // --- افزودن گروهی ---
+            function bulkAdd() {
+              const text = bulkInput.value;
+              const lines = text.split(/[\n,،،]/).map(s => s.trim()).filter(s => s);
+              let added = 0;
+              for (let raw of lines) {
+                // تشخیص جنسیت: اگر با خانم/آقا شروع شود
+                let gender = '';
+                let name = raw;
+                if (name.startsWith('خانم ')) { gender = 'خانم'; name = name.slice(4).trim(); }
+                else if (name.startsWith('آقا ')) { gender = 'آقا'; name = name.slice(3).trim(); }
+                if (name && addName(name, gender)) added++;
+              }
+              if (added) {
+                bulkInput.value = '';
+                alert(`${added} نفر با موفقیت افزوده شدند.`);
+              } else {
+                alert('هیچ نام معتبری یافت نشد.');
+              }
+            }
+
+            // --- تولید برنامه (قرعه‌کشی) ---
+            function generateSchedule() {
+              if (names.length === 0) {
+                alert('لیست افراد خالی است. ابتدا نام‌ها را اضافه کنید.');
+                return;
+              }
+              const start = startDateInput.value;
+              if (!start) {
+                alert('لطفاً تاریخ شروع را انتخاب کنید.');
+                return;
+              }
+              const emojiVal = emojiInput.value.trim() || '💎';
+              // کپی از نام‌ها و درهم‌ریزی
+              const shuffled = [...names];
+              shuffleArray(shuffled);
+
+              // تولید تاریخ‌ها
+              const rows = [];
+              const baseDate = new Date(start + 'T00:00:00');
+              for (let i = 0; i < shuffled.length; i++) {
+                const date = new Date(baseDate);
+                date.setDate(date.getDate() + i);
+                const ordinal = numberToOrdinal(i + 1);
+                const weekday = formatWeekday(date);
+                const dateStr = formatDateStr(date);
+                rows.push({
+                  ordinal,
+                  name: shuffled[i].name,
+                  gender: shuffled[i].gender,
+                  weekday,
+                  dateStr,
+                  emoji: emojiVal
+                });
+              }
+              displaySchedule(rows);
+              // اسکرول به بالا
+              document.getElementById('scheduleCard').scrollIntoView({ behavior: 'smooth' });
+            }
+
+            function shuffleArray(arr) {
+              for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+              }
+            }
+
+            function numberToOrdinal(n) {
+              const ordinals = [
+                'صفر', 'یکم', 'دوم', 'سوم', 'چهارم', 'پنجم', 'ششم', 'هفتم', 'هشتم', 'نهم', 'دهم',
+                'یازدهم', 'دوازدهم', 'سیزدهم', 'چهاردهم', 'پانزدهم', 'شانزدهم', 'هفدهم', 'هجدهم', 'نوزدهم', 'بیستم',
+                'بیست‌ویکم', 'بیست‌ودوم', 'بیست‌وسوم', 'بیست‌وچهارم', 'بیست‌وپنجم', 'بیست‌وششم', 'بیست‌وهفتم', 'بیست‌وهشتم', 'بیست‌ونهم', 'سی‌ام'
+              ];
+              if (n <= 30) return ordinals[n];
+              if (n <= 100) return `${n}م`; // ساده برای اعداد بیشتر
+              return `${n}م`;
+            }
+
+            function formatWeekday(date) {
+              const weekdays = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه'];
+              return weekdays[date.getDay()];
+            }
+
+            function formatDateStr(date) {
+              return date.toLocaleDateString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit' });
+            }
+
+            function displaySchedule(rows) {
+              let html = '';
+              rows.forEach((row, idx) => {
+                const genderText = row.gender ? `${row.gender} ` : '';
+                html += `
+                  <div class="schedule-item" style="animation-delay:${idx * 0.04}s">
+                    ${row.emoji} نفر ${row.ordinal} ${genderText}<b>${escapeHTML(row.name)}</b> روز <b>${row.weekday}</b> تاریخ <b>${row.dateStr}</b>
+                  </div>
+                `;
+              });
+              scheduleOutput.innerHTML = html;
+              // ذخیره خروجی برای کپی و دانلود
+              scheduleOutput._rows = rows;
+            }
+
+            // --- کپی با فرمت بولد (HTML + Plain) ---
+            function copySchedule() {
+              const rows = scheduleOutput._rows;
+              if (!rows || rows.length === 0) {
+                alert('ابتدا برنامه را تولید کنید.');
+                return;
+              }
+              // ساخت متن ساده و HTML
+              let plainText = '';
+              let htmlText = '';
+              rows.forEach(row => {
+                const genderText = row.gender ? `${row.gender} ` : '';
+                const line = `${row.emoji} نفر ${row.ordinal} ${genderText}${row.name} روز ${row.weekday} تاریخ ${row.dateStr}`;
+                plainText += line + '\n';
+                htmlText += `${row.emoji} نفر ${row.ordinal} ${genderText}<b>${row.name}</b> روز <b>${row.weekday}</b> تاریخ <b>${row.dateStr}</b><br>`;
+              });
+
+              // استفاده از Clipboard API جدید
+              if (navigator.clipboard && navigator.clipboard.write) {
+                const blobPlain = new Blob([plainText], { type: 'text/plain' });
+                const blobHtml = new Blob([htmlText], { type: 'text/html' });
+                const clipboardItem = new ClipboardItem({
+                  'text/plain': blobPlain,
+                  'text/html': blobHtml
+                });
+                navigator.clipboard.write([clipboardItem]).then(() => {
+                  alert('متن با فرمت بولد کپی شد!');
+                }).catch(() => {
+                  fallbackCopy(plainText);
+                });
+              } else {
+                fallbackCopy(plainText);
+              }
+            }
+
+            function fallbackCopy(text) {
+              const textarea = document.createElement('textarea');
+              textarea.value = text;
+              document.body.appendChild(textarea);
+              textarea.select();
+              try {
+                document.execCommand('copy');
+                alert('متن ساده کپی شد (مرورگر از HTML پشتیبانی نمی‌کند).');
+              } catch(e) {
+                alert('کپی ناموفق بود.');
+              }
+              document.body.removeChild(textarea);
+            }
+
+            // --- دانلود فایل txt ---
+            function downloadSchedule() {
+              const rows = scheduleOutput._rows;
+              if (!rows || rows.length === 0) {
+                alert('ابتدا برنامه را تولید کنید.');
+                return;
+              }
+              let text = '';
+              rows.forEach(row => {
+                const genderText = row.gender ? `${row.gender} ` : '';
+                text += `${row.emoji} نفر ${row.ordinal} ${genderText}${row.name} روز ${row.weekday} تاریخ ${row.dateStr}\n`;
+              });
+              const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'برنامه_نوبت‌دهی.txt';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }
+
+            // --- راه‌اندازی اولیه ---
+            function init() {
+              loadData();
+              renderPeople();
+
+              // رویدادها
+              addBtn.addEventListener('click', () => {
+                const name = nameInput.value.trim();
+                const gender = genderSelect.value;
+                if (addName(name, gender)) {
+                  nameInput.value = '';
+                  nameInput.focus();
+                }
+              });
+              nameInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addBtn.click();
+                }
+              });
+              bulkAddBtn.addEventListener('click', bulkAdd);
+              toggleListBtn.addEventListener('click', toggleList);
+              clearAllBtn.addEventListener('click', clearAll);
+
+              generateBtn.addEventListener('click', generateSchedule);
+              copyBtn.addEventListener('click', copySchedule);
+              downloadBtn.addEventListener('click', downloadSchedule);
+
+              // میانبر Ctrl+Enter برای تولید
+              document.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                  e.preventDefault();
+                  generateBtn.click();
+                }
+                if (e.key === 'Escape') {
+                  if (editModal.classList.contains('active')) closeEditModal();
+                  else nameInput.value = '';
+                }
+              });
+
+              // ویرایش مودال
+              editSaveBtn.addEventListener('click', saveEdit);
+              editCancelBtn.addEventListener('click', closeEditModal);
+              editInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') saveEdit();
+                if (e.key === 'Escape') closeEditModal();
+              });
+              // بستن مودال با کلیک روی پس‌زمینه
+              editModal.addEventListener('click', (e) => {
+                if (e.target === editModal) closeEditModal();
+              });
+
+              // تغییر تم
+              themeToggle.addEventListener('click', () => {
+                theme = (theme === 'light') ? 'dark' : 'light';
+                applyTheme();
+              });
+
+              // ذخیره خودکار در تغییرات
+              startDateInput.addEventListener('change', () => {
+                startDate = startDateInput.value;
+                saveData();
+              });
+              emojiInput.addEventListener('input', () => {
+                emoji = emojiInput.value.trim() || '💎';
+                saveData();
+              });
+
+              // Auto-expand برای textarea
+              bulkInput.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+              });
+
+              // تنظیم اولیه ارتفاع
+              bulkInput.dispatchEvent(new Event('input'));
+
+              // اگر data وجود داشت، مقداردهی
+              if (startDate) startDateInput.value = startDate;
+              if (emoji) emojiInput.value = emoji;
+            }
+
+            // اجرا
+            document.addEventListener('DOMContentLoaded', init);
+          })();
+          EOF
+
+          # ---------- package.json ----------
+          cat > package.json <<'EOF'
+          {
+            "name": "schedule-app",
+            "version": "1.0.0",
+            "private": true
+          }
+          EOF
+
+          # ---------- capacitor.config.json ----------
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.example.scheduleapp",
+            "appName": "نوبت‌دهی",
+            "webDir": ".",
+            "bundledWebRuntime": false
+          }
+          EOF
+
+      - name: Initialize Capacitor project and add Android
+        run: |
+          npx cap init com.example.scheduleapp "نوبت‌دهی" --web-dir=.
+          npx cap add android
+
+      - name: Copy web assets and sync
+        run: |
+          npx cap copy
+          npx cap sync
+
+      - name: Build debug APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          JAVA_HOME: ${{ env.JAVA_HOME }}
 
-      - name: 📦 Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Listsaz-APK
+          name: schedule-app-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 30
