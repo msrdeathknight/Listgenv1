@@ -168,12 +168,14 @@ jobs:
           import androidx.activity.ComponentActivity
           import androidx.activity.compose.setContent
           import androidx.compose.animation.*
-          import androidx.compose.animation.core.*
+          import androidx.compose.animation.core.spring
+          import androidx.compose.animation.core.tween
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.interaction.MutableInteractionSource
           import androidx.compose.foundation.isSystemInDarkTheme
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.lazy.LazyColumn
           import androidx.compose.foundation.lazy.items
-          import androidx.compose.foundation.lazy.rememberLazyListState
           import androidx.compose.foundation.rememberScrollState
           import androidx.compose.foundation.shape.RoundedCornerShape
           import androidx.compose.foundation.verticalScroll
@@ -186,14 +188,9 @@ jobs:
           import androidx.compose.runtime.*
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
-          import androidx.compose.ui.composed
-          import androidx.compose.ui.draw.clip
-          import androidx.compose.ui.draw.scale
-          import androidx.compose.ui.focus.onFocusEvent
           import androidx.compose.ui.platform.LocalClipboardManager
           import androidx.compose.ui.platform.LocalContext
           import androidx.compose.ui.platform.LocalLayoutDirection
-          import androidx.compose.ui.platform.LocalSoftwareKeyboardController
           import androidx.compose.ui.text.AnnotatedString
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.unit.LayoutDirection
@@ -201,28 +198,13 @@ jobs:
           import androidx.navigation.compose.NavHost
           import androidx.navigation.compose.composable
           import androidx.navigation.compose.rememberNavController
+          import kotlinx.coroutines.delay
           import java.time.LocalDate
           import kotlin.random.Random
-          import kotlinx.coroutines.launch
 
-          // ---------- Data ----------
           data class Person(val name: String, val gender: String = "خانم")
           data class ScheduleRow(val person: Person, val date: LocalDate)
 
-          // ---------- Enhanced Animation Extensions ----------
-          private fun Modifier.expandOnFocus() = composed {
-              var isFocused by remember { mutableStateOf(false) }
-              val scale by animateFloatAsState(
-                  targetValue = if (isFocused) 1.02f else 1f,
-                  animationSpec = spring(dampingRatio = 0.6f, stiffness = 200f),
-                  label = "focus_scale"
-              )
-              this
-                  .scale(scale)
-                  .onFocusEvent { isFocused = it.isFocused }
-          }
-
-          // ---------- Utilities ----------
           fun loadPeople(prefs: android.content.SharedPreferences): List<Person> =
               prefs.getString("people", "")!!.split("\\u001e").filter { it.isNotBlank() }.map {
                   val x = it.split("\\u001f")
@@ -303,7 +285,6 @@ jobs:
               return "%04d/%02d/%02d".format(jy, jm, jd)
           }
 
-          // ---------- Main Activity ----------
           class MainActivity : ComponentActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
@@ -320,7 +301,6 @@ jobs:
           fun ResyncApp() {
               val context = LocalContext.current
               val prefs = remember { context.getSharedPreferences("resync", Context.MODE_PRIVATE) }
-              val scope = rememberCoroutineScope()
 
               var people by remember { mutableStateOf(loadPeople(prefs)) }
               var name by remember { mutableStateOf("") }
@@ -339,7 +319,6 @@ jobs:
               var deleteTarget by remember { mutableStateOf<Person?>(null) }
               val snackbarHostState = remember { SnackbarHostState() }
               val clipboard = LocalClipboardManager.current
-              val keyboardController = LocalSoftwareKeyboardController.current
 
               fun persist() {
                   prefs.edit()
@@ -373,7 +352,7 @@ jobs:
                       small = RoundedCornerShape(12.dp),
                       medium = RoundedCornerShape(16.dp),
                       large = RoundedCornerShape(24.dp),
-                      extraLarge = RoundedCornerShape(28.dp)
+                      extraLarge = RoundedCornerShape(32.dp)
                   )
               ) {
                   val navController = rememberNavController()
@@ -381,53 +360,13 @@ jobs:
                   Scaffold(
                       topBar = {
                           TopAppBar(
-                              title = {
-                                  AnimatedContent(
-                                      targetState = people.size,
-                                      transitionSpec = {
-                                          fadeIn(tween(300)) + scaleIn(initialScale = 0.8f) with
-                                          fadeOut(tween(200)) + scaleOut(targetScale = 0.8f)
-                                      },
-                                      label = "title"
-                                  ) { count ->
-                                      Column {
-                                          Text("Resync", fontWeight = FontWeight.Bold)
-                                          Text(
-                                              "$count نفر در فهرست",
-                                              style = MaterialTheme.typography.labelMedium,
-                                              color = MaterialTheme.colorScheme.onSurfaceVariant
-                                          )
-                                      }
-                                  }
-                              },
+                              title = { Text("Resync", fontWeight = FontWeight.Bold) },
                               actions = {
-                                  IconButton(
-                                      onClick = {
-                                          searchOpen = !searchOpen
-                                          if (!searchOpen) query = ""
-                                      },
-                                      modifier = Modifier.scale(
-                                          if (searchOpen) 0.8f else 1f
-                                      )
-                                  ) {
-                                      Icon(
-                                          if (searchOpen) Icons.Default.Close else Icons.Default.Search,
-                                          contentDescription = "جست‌وجو"
-                                      )
+                                  IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) {
+                                      Icon(if (searchOpen) Icons.Default.Close else Icons.Default.Search, contentDescription = "جست‌وجو")
                                   }
-                                  IconButton(
-                                      onClick = { darkOverride = !dark },
-                                      modifier = Modifier.scale(
-                                          animateFloatAsState(
-                                              targetValue = if (dark) 0.9f else 1f,
-                                              animationSpec = spring(dampingRatio = 0.5f)
-                                          ).value
-                                      )
-                                  ) {
-                                      Icon(
-                                          if (dark) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                          "تغییر حالت"
-                                      )
+                                  IconButton(onClick = { darkOverride = !dark }) {
+                                      Icon(if (dark) Icons.Default.LightMode else Icons.Default.DarkMode, "تغییر حالت")
                                   }
                               }
                           )
@@ -438,30 +377,10 @@ jobs:
                           navController = navController,
                           startDestination = "people",
                           modifier = Modifier.padding(padding),
-                          enterTransition = {
-                              slideInHorizontally(
-                                  initialOffsetX = { it },
-                                  animationSpec = tween(400, easing = FastOutSlowInEasing)
-                              ) + fadeIn(animationSpec = tween(400))
-                          },
-                          exitTransition = {
-                              slideOutHorizontally(
-                                  targetOffsetX = { -it },
-                                  animationSpec = tween(300, easing = FastOutLinearInEasing)
-                              ) + fadeOut(animationSpec = tween(300))
-                          },
-                          popEnterTransition = {
-                              slideInHorizontally(
-                                  initialOffsetX = { -it },
-                                  animationSpec = tween(400, easing = FastOutSlowInEasing)
-                              ) + fadeIn(animationSpec = tween(400))
-                          },
-                          popExitTransition = {
-                              slideOutHorizontally(
-                                  targetOffsetX = { it },
-                                  animationSpec = tween(300, easing = FastOutLinearInEasing)
-                              ) + fadeOut(animationSpec = tween(300))
-                          }
+                          enterTransition = { slideInHorizontally { it } + fadeIn(tween(400)) },
+                          exitTransition = { slideOutHorizontally { -it } + fadeOut(tween(400)) },
+                          popEnterTransition = { slideInHorizontally { -it } + fadeIn(tween(400)) },
+                          popExitTransition = { slideOutHorizontally { it } + fadeOut(tween(400)) }
                       ) {
                           composable("people") {
                               PeopleScreen(
@@ -478,7 +397,6 @@ jobs:
                                           people = people + Person(n, newGender)
                                           name = ""
                                           persist()
-                                          keyboardController?.hide()
                                       }
                                   },
                                   onBulkAdd = { bulkDialog = true },
@@ -486,10 +404,7 @@ jobs:
                                   onDelete = { deleteTarget = it },
                                   onQueryChange = { query = it },
                                   onSearchToggle = { searchOpen = !searchOpen },
-                                  onNext = {
-                                      keyboardController?.hide()
-                                      navController.navigate("settings")
-                                  }
+                                  onNext = { navController.navigate("settings") }
                               )
                           }
                           composable("settings") {
@@ -514,7 +429,7 @@ jobs:
                       }
                   }
 
-                  // ---------- Dialogs ----------
+                  // Dialogs
                   if (bulkDialog) {
                       BulkDialog(
                           onDismiss = { bulkDialog = false },
@@ -590,7 +505,7 @@ jobs:
               }
           }
 
-          // ---------- People Screen ----------
+          @OptIn(ExperimentalAnimationApi::class)
           @Composable
           fun PeopleScreen(
               people: List<Person>,
@@ -609,86 +524,52 @@ jobs:
               onNext: () -> Unit
           ) {
               val filtered = people.filter { it.name.contains(query.trim(), true) }
-              val listState = rememberLazyListState()
-              val keyboardController = LocalSoftwareKeyboardController.current
+              var showNextChip by remember { mutableStateOf(false) }
+
+              LaunchedEffect(people) {
+                  if (people.isNotEmpty()) {
+                      delay(300)
+                      showNextChip = true
+                  } else {
+                      showNextChip = false
+                  }
+              }
 
               Box(modifier = Modifier.fillMaxSize()) {
                   LazyColumn(
-                      state = listState,
                       modifier = Modifier
                           .fillMaxSize()
-                          .padding(bottom = 120.dp)
+                          .padding(bottom = 100.dp)
                           .padding(horizontal = 16.dp),
                       verticalArrangement = Arrangement.spacedBy(12.dp)
                   ) {
-                      // Search bar with enhanced animation
                       item {
                           AnimatedVisibility(
                               visible = searchOpen,
-                              enter = expandVertically(
-                                  animationSpec = spring(
-                                      dampingRatio = 0.7f,
-                                      stiffness = 400f
-                                  )
-                              ) + fadeIn(animationSpec = tween(300)),
-                              exit = shrinkVertically(
-                                  animationSpec = spring(
-                                      dampingRatio = 0.7f,
-                                      stiffness = 400f
-                                  )
-                              ) + fadeOut(animationSpec = tween(200))
+                              enter = expandVertically(spring(stiffness = 300f)) + fadeIn(),
+                              exit = shrinkVertically(spring(stiffness = 300f)) + fadeOut()
                           ) {
                               OutlinedTextField(
                                   value = query,
                                   onValueChange = onQueryChange,
-                                  modifier = Modifier
-                                      .fillMaxWidth()
-                                      .animateContentSize(
-                                          animationSpec = spring(
-                                              dampingRatio = 0.6f,
-                                              stiffness = 300f
-                                          )
-                                      )
-                                      .expandOnFocus(),
+                                  modifier = Modifier.fillMaxWidth().animateContentSize(),
                                   singleLine = true,
                                   label = { Text("جست‌وجو در افراد") },
                                   leadingIcon = { Icon(Icons.Default.Search, null) },
                                   trailingIcon = {
                                       if (query.isNotEmpty()) {
-                                          IconButton(
-                                              onClick = { onQueryChange("") },
-                                              modifier = Modifier.scale(
-                                                  animateFloatAsState(
-                                                      targetValue = if (query.isNotEmpty()) 1f else 0f,
-                                                      animationSpec = spring()
-                                                  ).value
-                                              )
-                                          ) {
+                                          IconButton(onClick = { onQueryChange("") }) {
                                               Icon(Icons.Default.Clear, "پاک کردن")
                                           }
                                       }
-                                  },
-                                  shape = RoundedCornerShape(24.dp),
-                                  colors = OutlinedTextFieldDefaults.colors(
-                                      focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                      unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                                  )
+                                  }
                               )
                           }
                       }
-
-                      // People list card
                       item {
                           Card(
-                              modifier = Modifier.animateContentSize(
-                                  animationSpec = spring(
-                                      dampingRatio = 0.7f,
-                                      stiffness = 300f
-                                  )
-                              ),
-                              colors = CardDefaults.cardColors(
-                                  containerColor = MaterialTheme.colorScheme.surfaceVariant
-                              )
+                              modifier = Modifier.animateContentSize(),
+                              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                           ) {
                               Column(Modifier.padding(16.dp)) {
                                   Row(
@@ -696,88 +577,47 @@ jobs:
                                       horizontalArrangement = Arrangement.SpaceBetween,
                                       verticalAlignment = Alignment.CenterVertically
                                   ) {
-                                      AnimatedContent(
-                                          targetState = people.size,
-                                          transitionSpec = {
-                                              fadeIn(tween(300)) + scaleIn(initialScale = 0.7f) with
-                                              fadeOut(tween(200)) + scaleOut(targetScale = 0.7f)
-                                          },
-                                          label = "count"
-                                      ) { count ->
-                                          Text(
-                                              "افراد ($count)",
-                                              style = MaterialTheme.typography.titleLarge,
-                                              fontWeight = FontWeight.SemiBold
-                                          )
-                                      }
-                                      if (people.isNotEmpty()) {
+                                      Text(
+                                          "افراد (${people.size})",
+                                          style = MaterialTheme.typography.titleLarge,
+                                          fontWeight = FontWeight.SemiBold
+                                      )
+                                      AnimatedVisibility(
+                                          visible = showNextChip,
+                                          enter = scaleIn(spring()) + fadeIn(),
+                                          exit = scaleOut() + fadeOut()
+                                      ) {
                                           AssistChip(
                                               onClick = onNext,
                                               label = { Text("مرحله بعد") },
-                                              leadingIcon = {
-                                                  Icon(
-                                                      Icons.Default.ArrowForward,
-                                                      null,
-                                                      Modifier.scale(
-                                                          animateFloatAsState(
-                                                              targetValue = 1f,
-                                                              animationSpec = infiniteRepeatable(
-                                                                  animation = tween(600, easing = LinearEasing),
-                                                                  repeatMode = RepeatMode.Reverse
-                                                              )
-                                                          ).value
-                                                      )
-                                                  )
-                                              },
+                                              leadingIcon = { Icon(Icons.Default.ArrowForward, null) },
                                               colors = AssistChipDefaults.assistChipColors(
                                                   containerColor = MaterialTheme.colorScheme.primary,
                                                   labelColor = MaterialTheme.colorScheme.onPrimary
-                                              ),
-                                              modifier = Modifier.animateContentSize()
+                                              )
                                           )
                                       }
                                   }
                                   Spacer(Modifier.height(8.dp))
                                   if (filtered.isEmpty()) {
                                       Box(
-                                          Modifier
-                                              .fillMaxWidth()
-                                              .padding(vertical = 24.dp)
-                                              .animateContentSize(),
+                                          Modifier.fillMaxWidth().padding(vertical = 24.dp),
                                           contentAlignment = Alignment.Center
                                       ) {
                                           Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                              Icon(
-                                                  Icons.Default.People,
-                                                  null,
-                                                  Modifier.size(48.dp),
-                                                  tint = MaterialTheme.colorScheme.primary
-                                              )
+                                              Icon(Icons.Default.People, null, Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
                                               Spacer(Modifier.height(8.dp))
-                                              Text(
-                                                  if (people.isEmpty()) "هنوز هیچ فردی اضافه نشده است"
-                                                  else "نتیجه‌ای پیدا نشد."
-                                              )
+                                              Text(if (people.isEmpty()) "هنوز هیچ فردی اضافه نشده است" else "نتیجه‌ای پیدا نشد.")
                                               if (people.isEmpty()) {
-                                                  Text(
-                                                      "اولین نفر را از نوار پایین اضافه کنید.",
-                                                      style = MaterialTheme.typography.bodySmall
-                                                  )
+                                                  Text("اولین نفر را از نوار پایین اضافه کنید.", style = MaterialTheme.typography.bodySmall)
                                               }
                                           }
                                       }
                                   } else {
                                       Column(
-                                          Modifier
-                                              .fillMaxWidth()
-                                              .heightIn(max = 320.dp)
+                                          Modifier.fillMaxWidth().heightIn(max = 300.dp)
                                               .verticalScroll(rememberScrollState())
-                                              .animateContentSize(
-                                                  animationSpec = spring(
-                                                      dampingRatio = 0.6f,
-                                                      stiffness = 250f
-                                                  )
-                                              )
+                                              .animateContentSize(spring())
                                       ) {
                                           filtered.forEach { p ->
                                               PersonItem(
@@ -791,332 +631,129 @@ jobs:
                               }
                           }
                       }
-
-                      // Empty space at bottom
                       item { Spacer(Modifier.height(16.dp)) }
                   }
 
-                  // ---------- Bottom Input Bar (Enhanced) ----------
                   Surface(
                       modifier = Modifier
                           .align(Alignment.BottomCenter)
                           .fillMaxWidth()
                           .imePadding(),
-                      shadowElevation = 12.dp,
-                      tonalElevation = 8.dp,
-                      color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                      shape = RoundedCornerShape(
-                          topStart = 24.dp,
-                          topEnd = 24.dp,
-                          bottomStart = 0.dp,
-                          bottomEnd = 0.dp
-                      )
+                      shadowElevation = 8.dp,
+                      tonalElevation = 3.dp,
+                      color = MaterialTheme.colorScheme.surfaceContainer
                   ) {
-                      AnimatedContent(
-                          targetState = keyboardController?.isVisible ?: false,
-                          transitionSpec = {
-                              fadeIn(tween(300)) + slideInVertically(
-                                  initialOffsetY = { it },
-                                  animationSpec = tween(300, easing = FastOutSlowInEasing)
-                              ) with
-                              fadeOut(tween(200)) + slideOutVertically(
-                                  targetOffsetY = { it },
-                                  animationSpec = tween(200, easing = FastOutLinearInEasing)
+                      Row(
+                          Modifier
+                              .padding(horizontal = 12.dp, vertical = 8.dp),
+                          verticalAlignment = Alignment.CenterVertically,
+                          horizontalArrangement = Arrangement.spacedBy(8.dp)
+                      ) {
+                          OutlinedTextField(
+                              value = name,
+                              onValueChange = onNameChange,
+                              modifier = Modifier.weight(1f),
+                              singleLine = true,
+                              label = { Text("نام شخص") },
+                              shape = RoundedCornerShape(24.dp),
+                              colors = OutlinedTextFieldDefaults.colors(
+                                  focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                  unfocusedBorderColor = MaterialTheme.colorScheme.outline
                               )
-                          },
-                          label = "input_bar"
-                      ) { isKeyboardVisible ->
-                          Row(
-                              Modifier
-                                  .fillMaxWidth()
-                                  .padding(horizontal = 12.dp)
-                                  .padding(vertical = if (isKeyboardVisible) 12.dp else 8.dp)
-                                  .animateContentSize(
-                                      animationSpec = spring(
-                                          dampingRatio = 0.6f,
-                                          stiffness = 350f
-                                      )
-                                  ),
-                              verticalAlignment = Alignment.CenterVertically,
-                              horizontalArrangement = Arrangement.spacedBy(8.dp)
+                          )
+                          FilterChip(
+                              selected = true,
+                              onClick = {
+                                  val next = when (newGender) {
+                                      "خانم" -> "آقا"
+                                      "آقا" -> "بدون جنسیت"
+                                      else -> "خانم"
+                                  }
+                                  onGenderChange(next)
+                              },
+                              label = { Text(newGender) },
+                              leadingIcon = { Icon(Icons.Default.Person, null, Modifier.size(18.dp)) },
+                              colors = FilterChipDefaults.filterChipColors(
+                                  containerColor = MaterialTheme.colorScheme.secondaryContainer
+                              )
+                          )
+                          FilledIconButton(
+                              onClick = onAddPerson,
+                              modifier = Modifier.size(52.dp),
+                              colors = IconButtonDefaults.filledIconButtonColors(
+                                  containerColor = MaterialTheme.colorScheme.primary
+                              )
                           ) {
-                              OutlinedTextField(
-                                  value = name,
-                                  onValueChange = onNameChange,
-                                  modifier = Modifier
-                                      .weight(1f)
-                                      .expandOnFocus(),
-                                  singleLine = true,
-                                  label = { Text("نام شخص") },
-                                  shape = RoundedCornerShape(32.dp),
-                                  colors = OutlinedTextFieldDefaults.colors(
-                                      focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                      unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                                      focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                                      unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest
-                                  ),
-                                  textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                      fontWeight = FontWeight.Medium
-                                  )
-                              )
-                              FilterChip(
-                                  selected = true,
-                                  onClick = {
-                                      val next = when (newGender) {
-                                          "خانم" -> "آقا"
-                                          "آقا" -> "بدون جنسیت"
-                                          else -> "خانم"
-                                      }
-                                      onGenderChange(next)
-                                  },
-                                  label = { Text(newGender) },
-                                  leadingIcon = {
-                                      Icon(
-                                          Icons.Default.Person,
-                                          null,
-                                          Modifier.size(18.dp)
-                                      )
-                                  },
-                                  colors = FilterChipDefaults.filterChipColors(
-                                      containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                      selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer
-                                  ),
-                                  modifier = Modifier.animateContentSize()
-                              )
-                              FilledIconButton(
-                                  onClick = onAddPerson,
-                                  modifier = Modifier
-                                      .size(56.dp)
-                                      .scale(
-                                          animateFloatAsState(
-                                              targetValue = if (name.isNotBlank()) 1f else 0.9f,
-                                              animationSpec = spring(dampingRatio = 0.5f)
-                                          ).value
-                                      ),
-                                  colors = IconButtonDefaults.filledIconButtonColors(
-                                      containerColor = if (name.isNotBlank())
-                                          MaterialTheme.colorScheme.primary
-                                      else
-                                          MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                                  )
-                              ) {
-                                  Icon(
-                                      Icons.Default.Add,
-                                      "افزودن",
-                                      tint = MaterialTheme.colorScheme.onPrimary,
-                                      modifier = Modifier.scale(
-                                          animateFloatAsState(
-                                              targetValue = if (name.isNotBlank()) 1f else 0.8f,
-                                              animationSpec = spring(dampingRatio = 0.5f)
-                                          ).value
-                                      )
-                                  )
-                              }
-                              IconButton(
-                                  onClick = onBulkAdd,
-                                  modifier = Modifier.size(56.dp)
-                              ) {
-                                  Icon(Icons.Default.GroupAdd, "افزودن گروهی")
-                              }
+                              Icon(Icons.Default.Add, "افزودن", tint = MaterialTheme.colorScheme.onPrimary)
+                          }
+                          IconButton(
+                              onClick = onBulkAdd,
+                              modifier = Modifier.size(52.dp)
+                          ) {
+                              Icon(Icons.Default.GroupAdd, "افزودن گروهی")
                           }
                       }
                   }
               }
           }
 
-          // ---------- Person Item with Enhanced Animations ----------
+          @OptIn(ExperimentalAnimationApi::class)
           @Composable
-          fun PersonItem(
-              person: Person,
-              onEdit: () -> Unit,
-              onDelete: () -> Unit
-          ) {
-              var expanded by remember { mutableStateOf(false) }
-              val coroutineScope = rememberCoroutineScope()
+          fun PersonItem(person: Person, onEdit: () -> Unit, onDelete: () -> Unit) {
+              var visible by remember { mutableStateOf(false) }
+              LaunchedEffect(Unit) {
+                  delay(50)
+                  visible = true
+              }
 
-              AnimatedItem(
-                  enter = fadeIn(
-                      animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f)
-                  ) + scaleIn(
-                      initialScale = 0.7f,
-                      animationSpec = spring(dampingRatio = 0.6f, stiffness = 250f)
-                  ),
-                  exit = fadeOut(
-                      animationSpec = spring(dampingRatio = 0.7f, stiffness = 400f)
-                  ) + scaleOut(
-                      targetScale = 0.7f,
-                      animationSpec = spring(dampingRatio = 0.7f, stiffness = 400f)
-                  )
+              AnimatedVisibility(
+                  visible = visible,
+                  enter = fadeIn(spring()) + scaleIn(initialScale = 0.7f, animationSpec = spring(stiffness = 200f)),
+                  exit = fadeOut() + scaleOut(targetScale = 0.7f)
               ) {
                   ElevatedCard(
                       modifier = Modifier
                           .fillMaxWidth()
                           .padding(vertical = 4.dp)
-                          .animateContentSize(
-                              animationSpec = spring(
-                                  dampingRatio = 0.6f,
-                                  stiffness = 300f
-                              )
-                          )
-                          .scale(
-                              animateFloatAsState(
-                                  targetValue = if (expanded) 1.02f else 1f,
-                                  animationSpec = spring(dampingRatio = 0.4f, stiffness = 200f)
-                              ).value
-                          ),
-                      shape = RoundedCornerShape(20.dp),
-                      colors = CardDefaults.cardColors(
-                          containerColor = if (expanded)
-                              MaterialTheme.colorScheme.primaryContainer
-                          else
-                              MaterialTheme.colorScheme.surface
-                      ),
-                      elevation = if (expanded) CardDefaults.elevatedCardElevation(
-                          defaultElevation = 8.dp
-                      ) else CardDefaults.elevatedCardElevation()
+                          .animateContentSize(spring()),
+                      shape = RoundedCornerShape(20.dp)
                   ) {
                       Row(
-                          Modifier
-                              .fillMaxWidth()
-                              .clickable(
-                                  interactionSource = remember { MutableInteractionSource() },
-                                  indication = rememberRipple(
-                                      bounded = true,
-                                      radius = 40.dp,
-                                      color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                                  )
-                              ) {
-                                  expanded = !expanded
-                              }
-                              .padding(horizontal = 12.dp, vertical = 10.dp),
+                          Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                           verticalAlignment = Alignment.CenterVertically
                       ) {
-                          // Avatar
-                          AnimatedContent(
-                              targetState = person.name.take(1),
-                              transitionSpec = {
-                                  fadeIn(tween(300)) + scaleIn(initialScale = 0.5f) with
-                                  fadeOut(tween(200)) + scaleOut(targetScale = 0.5f)
-                              },
-                              label = "avatar"
-                          ) { initial ->
-                              Surface(
-                                  color = if (expanded)
-                                      MaterialTheme.colorScheme.primary
-                                  else
-                                      MaterialTheme.colorScheme.primaryContainer,
-                                  shape = RoundedCornerShape(16.dp),
-                                  modifier = Modifier.size(46.dp),
-                                  shadowElevation = if (expanded) 4.dp else 0.dp
-                              ) {
-                                  Box(contentAlignment = Alignment.Center) {
-                                      Text(
-                                          initial,
-                                          style = MaterialTheme.typography.titleLarge,
-                                          fontWeight = FontWeight.Bold,
-                                          color = if (expanded)
-                                              MaterialTheme.colorScheme.onPrimary
-                                          else
-                                              MaterialTheme.colorScheme.onPrimaryContainer
-                                      )
-                                  }
+                          Surface(
+                              color = MaterialTheme.colorScheme.primaryContainer,
+                              shape = RoundedCornerShape(16.dp),
+                              modifier = Modifier.size(46.dp)
+                          ) {
+                              Box(contentAlignment = Alignment.Center) {
+                                  Text(person.name.take(1), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                               }
                           }
-
                           Spacer(Modifier.width(12.dp))
-
-                          // Name and gender
                           Column(Modifier.weight(1f)) {
-                              AnimatedContent(
-                                  targetState = person.name,
-                                  transitionSpec = {
-                                      fadeIn(tween(300)) + slideInVertically(
-                                          initialOffsetY = { -it / 4 },
-                                          animationSpec = tween(300, easing = FastOutSlowInEasing)
-                                      ) with
-                                      fadeOut(tween(200)) + slideOutVertically(
-                                          targetOffsetY = { it / 4 },
-                                          animationSpec = tween(200, easing = FastOutLinearInEasing)
-                                      )
-                                  },
-                                  label = "name"
-                              ) { name ->
-                                  Text(
-                                      name,
-                                      fontWeight = FontWeight.SemiBold,
-                                      style = MaterialTheme.typography.bodyLarge
-                                  )
-                              }
+                              Text(person.name, fontWeight = FontWeight.SemiBold)
                               AssistChip(
                                   onClick = {},
                                   label = { Text(person.gender) },
-                                  leadingIcon = {
-                                      Icon(
-                                          Icons.Default.Person,
-                                          null,
-                                          Modifier.size(16.dp)
-                                      )
-                                  },
+                                  leadingIcon = { Icon(Icons.Default.Person, null, Modifier.size(16.dp)) },
                                   colors = AssistChipDefaults.assistChipColors(
-                                      containerColor = if (expanded)
-                                          MaterialTheme.colorScheme.primaryContainer
-                                      else
-                                          MaterialTheme.colorScheme.surfaceVariant
-                                  ),
-                                  modifier = Modifier.animateContentSize()
+                                      containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                  )
                               )
                           }
-
-                          // Actions
-                          AnimatedVisibility(
-                              visible = expanded || true,
-                              enter = expandHorizontally(
-                                  animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f)
-                              ) + fadeIn(),
-                              exit = shrinkHorizontally(
-                                  animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f)
-                              ) + fadeOut()
-                          ) {
-                              Row {
-                                  IconButton(
-                                      onClick = onEdit,
-                                      modifier = Modifier.size(44.dp)
-                                  ) {
-                                      Icon(
-                                          Icons.Default.Edit,
-                                          "ویرایش ${person.name}",
-                                          modifier = Modifier.scale(
-                                              animateFloatAsState(
-                                                  targetValue = 1f,
-                                                  animationSpec = spring(dampingRatio = 0.5f)
-                                              ).value
-                                          )
-                                      )
-                                  }
-                                  IconButton(
-                                      onClick = onDelete,
-                                      modifier = Modifier.size(44.dp)
-                                  ) {
-                                      Icon(
-                                          Icons.Default.Delete,
-                                          "حذف ${person.name}",
-                                          tint = MaterialTheme.colorScheme.error,
-                                          modifier = Modifier.scale(
-                                              animateFloatAsState(
-                                                  targetValue = 1f,
-                                                  animationSpec = spring(dampingRatio = 0.5f)
-                                              ).value
-                                          )
-                                      )
-                                  }
-                              }
+                          IconButton(onClick = onEdit, modifier = Modifier.size(44.dp)) {
+                              Icon(Icons.Default.Edit, "ویرایش ${person.name}")
+                          }
+                          IconButton(onClick = onDelete, modifier = Modifier.size(44.dp)) {
+                              Icon(Icons.Default.Delete, "حذف ${person.name}")
                           }
                       }
                   }
               }
           }
 
-          // ---------- Settings & Output Screen ----------
           @OptIn(ExperimentalAnimationApi::class)
           @Composable
           fun SettingsOutputScreen(
@@ -1139,351 +776,154 @@ jobs:
               val output = remember(rows, emoji, template) {
                   if (rows.isEmpty()) "" else formatOutput(rows, emoji, template)
               }
-              val scope = rememberCoroutineScope()
-              var buttonScale by remember { mutableStateOf(1f) }
 
               LazyColumn(
                   modifier = Modifier.fillMaxSize().padding(16.dp),
                   verticalArrangement = Arrangement.spacedBy(16.dp)
               ) {
-                  // Settings card
                   item {
                       Card(
-                          modifier = Modifier
-                              .animateContentSize(
-                                  animationSpec = spring(
-                                      dampingRatio = 0.7f,
-                                      stiffness = 250f
-                                  )
-                              )
-                              .scale(
-                                  animateFloatAsState(
-                                      targetValue = 1f,
-                                      animationSpec = spring(dampingRatio = 0.6f, stiffness = 200f)
-                                  ).value
-                              ),
-                          colors = CardDefaults.cardColors(
-                              containerColor = MaterialTheme.colorScheme.secondaryContainer
-                          ),
-                          shape = RoundedCornerShape(24.dp)
+                          modifier = Modifier.animateContentSize(),
+                          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
                       ) {
-                          Column(
-                              Modifier.padding(16.dp),
-                              verticalArrangement = Arrangement.spacedBy(12.dp)
-                          ) {
+                          Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                               Row(
                                   modifier = Modifier.fillMaxWidth(),
                                   horizontalArrangement = Arrangement.SpaceBetween,
                                   verticalAlignment = Alignment.CenterVertically
                               ) {
-                                  Text(
-                                      "تنظیمات قرعه‌کشی",
-                                      style = MaterialTheme.typography.titleLarge,
-                                      fontWeight = FontWeight.SemiBold
-                                  )
-                                  IconButton(
-                                      onClick = onBack,
-                                      modifier = Modifier.scale(
-                                          animateFloatAsState(
-                                              targetValue = 1f,
-                                              animationSpec = spring(dampingRatio = 0.5f)
-                                          ).value
-                                      )
-                                  ) {
+                                  Text("تنظیمات قرعه‌کشی", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                                  IconButton(onClick = onBack) {
                                       Icon(Icons.Default.ArrowBack, "بازگشت")
                                   }
                               }
-
                               OutlinedTextField(
                                   value = emoji,
                                   onValueChange = onEmojiChange,
                                   label = { Text("ایموجی") },
                                   singleLine = true,
-                                  modifier = Modifier
-                                      .fillMaxWidth()
-                                      .animateContentSize(),
-                                  leadingIcon = { Text("🎨") },
-                                  shape = RoundedCornerShape(20.dp)
+                                  modifier = Modifier.fillMaxWidth(),
+                                  leadingIcon = { Text("🎨") }
                               )
-
                               OutlinedButton(
                                   onClick = onShowDatePicker,
-                                  modifier = Modifier
-                                      .fillMaxWidth()
-                                      .scale(
-                                          animateFloatAsState(
-                                              targetValue = 1f,
-                                              animationSpec = spring(dampingRatio = 0.5f)
-                                          ).value
-                                      )
+                                  modifier = Modifier.fillMaxWidth()
                               ) {
                                   Icon(Icons.Default.DateRange, null)
                                   Spacer(Modifier.width(8.dp))
-                                  AnimatedContent(
-                                      targetState = startDate,
-                                      transitionSpec = {
-                                          fadeIn(tween(300)) + scaleIn(initialScale = 0.8f) with
-                                          fadeOut(tween(200)) + scaleOut(targetScale = 0.8f)
-                                      },
-                                      label = "date"
-                                  ) { date ->
-                                      Text("تاریخ شروع: ${jalali(date)}")
-                                  }
+                                  Text("تاریخ شروع: ${jalali(startDate)}")
                               }
-
-                              Text(
-                                  "قالب خروجی",
-                                  style = MaterialTheme.typography.labelLarge,
-                                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                              )
-                              Row(
-                                  horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                  modifier = Modifier.animateContentSize()
-                              ) {
-                                  listOf("رسمی", "مینیمال", "تلگرام").forEachIndexed { index, t ->
+                              Text("قالب خروجی", style = MaterialTheme.typography.labelLarge)
+                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                  listOf("رسمی", "مینیمال", "تلگرام").forEach { t ->
                                       FilterChip(
                                           selected = template == t,
-                                          onClick = {
-                                              scope.launch {
-                                                  buttonScale = 0.9f
-                                                  onTemplateChange(t)
-                                                  delay(100)
-                                                  buttonScale = 1f
-                                              }
-                                          },
-                                          label = { Text(t) },
-                                          modifier = Modifier.scale(
-                                              animateFloatAsState(
-                                                  targetValue = if (template == t) 1.05f else 1f,
-                                                  animationSpec = spring(dampingRatio = 0.5f)
-                                              ).value
-                                          )
+                                          onClick = { onTemplateChange(t) },
+                                          label = { Text(t) }
                                       )
                                   }
                               }
-
                               Row(
                                   modifier = Modifier.fillMaxWidth(),
                                   horizontalArrangement = Arrangement.spacedBy(8.dp)
                               ) {
                                   Button(
-                                      onClick = {
-                                          scope.launch {
-                                              buttonScale = 0.95f
-                                              onGenerate()
-                                              delay(200)
-                                              buttonScale = 1f
-                                          }
-                                      },
+                                      onClick = onGenerate,
                                       enabled = people.isNotEmpty(),
-                                      modifier = Modifier
-                                          .weight(1f)
-                                          .scale(buttonScale)
+                                      modifier = Modifier.weight(1f)
                                   ) {
                                       Icon(Icons.Default.Refresh, null)
                                       Spacer(Modifier.width(6.dp))
                                       Text("ترتیب جدید")
                                   }
                                   OutlinedButton(
-                                      onClick = {
-                                          scope.launch {
-                                              buttonScale = 0.95f
-                                              onReuseSeed()
-                                              delay(200)
-                                              buttonScale = 1f
-                                          }
-                                      },
+                                      onClick = onReuseSeed,
                                       enabled = people.isNotEmpty() && previousSeed != 0L,
-                                      modifier = Modifier
-                                          .weight(1f)
-                                          .scale(buttonScale)
+                                      modifier = Modifier.weight(1f)
                                   ) {
                                       Text("Seed قبلی")
                                   }
                               }
-
                               if (people.isEmpty()) {
                                   AssistChip(
-                                      onClick = { onBack() },
+                                      onClick = { /* بازگشت */ },
                                       label = { Text("ابتدا افراد را اضافه کنید") },
                                       leadingIcon = { Icon(Icons.Default.Warning, null) },
                                       colors = AssistChipDefaults.assistChipColors(
                                           containerColor = MaterialTheme.colorScheme.errorContainer,
                                           labelColor = MaterialTheme.colorScheme.onErrorContainer
-                                      ),
-                                      modifier = Modifier.animateContentSize()
+                                      )
                                   )
                               }
                           }
                       }
                   }
 
-                  // Output preview with enhanced animation
                   item {
                       AnimatedContent(
                           targetState = rows,
                           transitionSpec = {
-                              fadeIn(
-                                  animationSpec = tween(400, easing = FastOutSlowInEasing)
-                              ) + scaleIn(
-                                  initialScale = 0.95f,
-                                  animationSpec = tween(400, easing = FastOutSlowInEasing)
-                              ) with
-                              fadeOut(
-                                  animationSpec = tween(300, easing = FastOutLinearInEasing)
-                              ) + scaleOut(
-                                  targetScale = 0.95f,
-                                  animationSpec = tween(300, easing = FastOutLinearInEasing)
-                              )
+                              fadeIn(tween(300)) + scaleIn(initialScale = 0.95f, animationSpec = tween(300)) with
+                              fadeOut(tween(200)) + scaleOut(targetScale = 0.95f, animationSpec = tween(200))
                           },
-                          label = "output_preview"
+                          label = "output"
                       ) { currentRows ->
                           if (currentRows.isEmpty()) {
                               Card(
-                                  modifier = Modifier
-                                      .fillMaxWidth()
-                                      .animateContentSize(),
-                                  colors = CardDefaults.cardColors(
-                                      containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                  ),
-                                  shape = RoundedCornerShape(24.dp)
+                                  modifier = Modifier.fillMaxWidth().animateContentSize(),
+                                  colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                               ) {
                                   Column(
                                       Modifier.padding(32.dp),
                                       horizontalAlignment = Alignment.CenterHorizontally,
                                       verticalArrangement = Arrangement.Center
                                   ) {
-                                      Icon(
-                                          Icons.Default.ListAlt,
-                                          null,
-                                          Modifier.size(56.dp),
-                                          tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-                                      )
+                                      Icon(Icons.Default.ListAlt, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
                                       Spacer(Modifier.height(12.dp))
-                                      Text(
-                                          "هنوز برنامه‌ای تولید نشده.",
-                                          style = MaterialTheme.typography.titleMedium
-                                      )
-                                      Text(
-                                          "روی «ترتیب جدید» بزنید.",
-                                          style = MaterialTheme.typography.bodySmall,
-                                          color = MaterialTheme.colorScheme.onSurfaceVariant
-                                      )
+                                      Text("هنوز برنامه‌ای تولید نشده.", style = MaterialTheme.typography.titleMedium)
+                                      Text("روی «ترتیب جدید» بزنید.", style = MaterialTheme.typography.bodySmall)
                                   }
                               }
                           } else {
                               Card(
-                                  modifier = Modifier
-                                      .fillMaxWidth()
-                                      .animateContentSize(
-                                          animationSpec = spring(
-                                              dampingRatio = 0.7f,
-                                              stiffness = 250f
-                                          )
-                                      ),
-                                  colors = CardDefaults.cardColors(
-                                      containerColor = MaterialTheme.colorScheme.primaryContainer
-                                  ),
-                                  shape = RoundedCornerShape(24.dp)
+                                  modifier = Modifier.fillMaxWidth().animateContentSize(),
+                                  colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                               ) {
                                   Column(Modifier.padding(16.dp)) {
-                                      Row(
-                                          modifier = Modifier.fillMaxWidth(),
-                                          horizontalArrangement = Arrangement.SpaceBetween,
-                                          verticalAlignment = Alignment.CenterVertically
-                                      ) {
-                                          Text(
-                                              "پیش‌نمایش خروجی",
-                                              style = MaterialTheme.typography.titleMedium,
-                                              fontWeight = FontWeight.SemiBold
-                                          )
-                                          Badge(
-                                              containerColor = MaterialTheme.colorScheme.primary,
-                                              modifier = Modifier.scale(
-                                                  animateFloatAsState(
-                                                      targetValue = 1f,
-                                                      animationSpec = infiniteRepeatable(
-                                                          animation = tween(800, easing = LinearEasing),
-                                                          repeatMode = RepeatMode.Reverse
-                                                      )
-                                                  ).value
-                                              )
-                                          ) {
-                                              Text("${rows.size} نفر")
-                                          }
-                                      }
+                                      Text("پیش‌نمایش خروجی", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                       Spacer(Modifier.height(8.dp))
-                                      AnimatedContent(
-                                          targetState = output,
-                                          transitionSpec = {
-                                              fadeIn(tween(300)) + slideInVertically(
-                                                  initialOffsetY = { it / 4 },
-                                                  animationSpec = tween(300, easing = FastOutSlowInEasing)
-                                              ) with
-                                              fadeOut(tween(200)) + slideOutVertically(
-                                                  targetOffsetY = { -it / 4 },
-                                                  animationSpec = tween(200, easing = FastOutLinearInEasing)
-                                              )
-                                          },
-                                          label = "output_text"
-                                      ) { text ->
-                                          Text(
-                                              text = text,
-                                              style = MaterialTheme.typography.bodyLarge,
-                                              modifier = Modifier
-                                                  .fillMaxWidth()
-                                                  .heightIn(max = 280.dp)
-                                                  .verticalScroll(rememberScrollState())
-                                                  .animateContentSize()
-                                          )
-                                      }
+                                      Text(
+                                          text = output,
+                                          style = MaterialTheme.typography.bodyLarge,
+                                          modifier = Modifier
+                                              .fillMaxWidth()
+                                              .heightIn(max = 300.dp)
+                                              .verticalScroll(rememberScrollState())
+                                              .animateContentSize()
+                                      )
                                   }
                               }
                           }
                       }
                   }
 
-                  // Action buttons with enhanced animations
                   item {
                       Row(
-                          modifier = Modifier
-                              .fillMaxWidth()
-                              .animateContentSize(
-                                  animationSpec = spring(
-                                      dampingRatio = 0.7f,
-                                      stiffness = 300f
-                                  )
-                              ),
+                          modifier = Modifier.fillMaxWidth(),
                           horizontalArrangement = Arrangement.spacedBy(8.dp)
                       ) {
                           OutlinedButton(
                               onClick = onBack,
-                              modifier = Modifier
-                                  .weight(1f)
-                                  .scale(
-                                      animateFloatAsState(
-                                          targetValue = 1f,
-                                          animationSpec = spring(dampingRatio = 0.5f)
-                                      ).value
-                                  )
+                              modifier = Modifier.weight(1f)
                           ) {
                               Icon(Icons.Default.ArrowBack, null)
                               Spacer(Modifier.width(4.dp))
                               Text("برگشت")
                           }
                           Button(
-                              onClick = {
-                                  clipboard.setText(AnnotatedString(output))
-                              },
+                              onClick = { clipboard.setText(AnnotatedString(output)) },
                               enabled = rows.isNotEmpty(),
-                              modifier = Modifier
-                                  .weight(1f)
-                                  .scale(
-                                      animateFloatAsState(
-                                          targetValue = if (rows.isNotEmpty()) 1f else 0.95f,
-                                          animationSpec = spring(dampingRatio = 0.5f)
-                                      ).value
-                                  )
+                              modifier = Modifier.weight(1f)
                           ) {
                               Icon(Icons.Default.ContentCopy, null)
                               Spacer(Modifier.width(4.dp))
@@ -1500,14 +940,7 @@ jobs:
                                   )
                               },
                               enabled = rows.isNotEmpty(),
-                              modifier = Modifier
-                                  .weight(1f)
-                                  .scale(
-                                      animateFloatAsState(
-                                          targetValue = if (rows.isNotEmpty()) 1f else 0.95f,
-                                          animationSpec = spring(dampingRatio = 0.5f)
-                                      ).value
-                                  )
+                              modifier = Modifier.weight(1f)
                           ) {
                               Icon(Icons.AutoMirrored.Filled.Send, null)
                               Spacer(Modifier.width(4.dp))
@@ -1519,37 +952,23 @@ jobs:
               }
           }
 
-          // ---------- Dialogs ----------
           @Composable
           fun BulkDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
               var text by remember { mutableStateOf("") }
               AlertDialog(
                   onDismissRequest = onDismiss,
-                  title = {
-                      Text("افزودن گروهی")
-                  },
+                  title = { Text("افزودن گروهی") },
                   text = {
                       OutlinedTextField(
                           value = text,
                           onValueChange = { text = it },
                           label = { Text("نام‌ها با کاما یا خط جدید") },
                           minLines = 4,
-                          modifier = Modifier
-                              .fillMaxWidth()
-                              .expandOnFocus(),
-                          shape = RoundedCornerShape(16.dp)
+                          modifier = Modifier.fillMaxWidth()
                       )
                   },
-                  confirmButton = {
-                      TextButton(onClick = { onAdd(text) }) {
-                          Text("افزودن")
-                      }
-                  },
-                  dismissButton = {
-                      TextButton(onClick = onDismiss) {
-                          Text("انصراف")
-                      }
-                  }
+                  confirmButton = { TextButton(onClick = { onAdd(text) }) { Text("افزودن") } },
+                  dismissButton = { TextButton(onClick = onDismiss) { Text("انصراف") } }
               )
           }
 
@@ -1566,18 +985,12 @@ jobs:
                               value = n,
                               onValueChange = { n = it },
                               label = { Text("نام") },
-                              modifier = Modifier
-                                  .fillMaxWidth()
-                                  .expandOnFocus(),
-                              shape = RoundedCornerShape(16.dp)
+                              modifier = Modifier.fillMaxWidth()
                           )
                           Spacer(Modifier.height(8.dp))
                           listOf("خانم", "آقا", "بدون جنسیت").forEach { gender ->
                               Row(verticalAlignment = Alignment.CenterVertically) {
-                                  RadioButton(
-                                      selected = g == gender,
-                                      onClick = { g = gender }
-                                  )
+                                  RadioButton(selected = g == gender, onClick = { g = gender })
                                   Text(gender)
                               }
                           }
@@ -1590,9 +1003,7 @@ jobs:
                           }
                       ) { Text("ذخیره") }
                   },
-                  dismissButton = {
-                      TextButton(onClick = onDismiss) { Text("انصراف") }
-                  }
+                  dismissButton = { TextButton(onClick = onDismiss) { Text("انصراف") } }
               )
           }
           EOF
@@ -1619,5 +1030,5 @@ jobs:
       - name: Commit generated Android source
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "feat: enhance UI with MD3E animations and fix input bar"
+          commit_message: "chore: final UI/UX improvements with full MD3E and fixed animations"
           file_pattern: "settings.gradle.kts build.gradle.kts gradle.properties app gradlew gradlew.bat gradle"
