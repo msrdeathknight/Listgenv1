@@ -9,6 +9,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -35,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.delay
 import java.time.LocalDate
 import kotlin.random.Random
 
@@ -132,7 +135,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 fun ResyncApp() {
     val context = LocalContext.current
@@ -341,6 +344,7 @@ fun ResyncApp() {
     }
 }
 
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun PeopleScreen(
     people: List<Person>,
@@ -359,6 +363,16 @@ fun PeopleScreen(
     onNext: () -> Unit
 ) {
     val filtered = people.filter { it.name.contains(query.trim(), true) }
+    var showNextChip by remember { mutableStateOf(false) }
+
+    LaunchedEffect(people) {
+        if (people.isNotEmpty()) {
+            delay(300)
+            showNextChip = true
+        } else {
+            showNextChip = false
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -407,7 +421,11 @@ fun PeopleScreen(
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            if (people.isNotEmpty()) {
+                            AnimatedVisibility(
+                                visible = showNextChip,
+                                enter = scaleIn(spring()) + fadeIn(),
+                                exit = scaleOut() + fadeOut()
+                            ) {
                                 AssistChip(
                                     onClick = onNext,
                                     label = { Text("مرحله بعد") },
@@ -458,15 +476,15 @@ fun PeopleScreen(
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .imePadding(),
             shadowElevation = 8.dp,
             tonalElevation = 3.dp,
             color = MaterialTheme.colorScheme.surfaceContainer
         ) {
             Row(
                 Modifier
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .imePadding(),
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -518,10 +536,17 @@ fun PeopleScreen(
     }
 }
 
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun PersonItem(person: Person, onEdit: () -> Unit, onDelete: () -> Unit) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(50)
+        visible = true
+    }
+
     AnimatedVisibility(
-        visible = true,
+        visible = visible,
         enter = fadeIn(spring()) + scaleIn(initialScale = 0.7f, animationSpec = spring(stiffness = 200f)),
         exit = fadeOut() + scaleOut(targetScale = 0.7f)
     ) {
@@ -568,7 +593,6 @@ fun PersonItem(person: Person, onEdit: () -> Unit, onDelete: () -> Unit) {
     }
 }
 
-// اصلاح: اضافه کردن OptIn برای ExperimentalAnimationApi
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun SettingsOutputScreen(
