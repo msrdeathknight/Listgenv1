@@ -19,26 +19,29 @@ jobs:
     name: Generate Resync and build APK
     runs-on: ubuntu-latest
     env:
-      GRADLE_VERSION: "8.9"
+      GRADLE_VERSION: "8.6"               # سازگار با AGP 8.7.3
       ANDROID_COMPILE_SDK: "35"
       ANDROID_BUILD_TOOLS: "35.0.0"
       VERSION_NAME: ${{ inputs.version_name || '1.0.0' }}
-      # Force Node.js 24 for all actions (fix deprecation warning)
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
-      # ---------- 1. Checkout ----------
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # ---------- 2. Setup Java 17 (critical) ----------
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
+          # تنظیم JAVA_HOME به‌صورت صریح
+          java-package: jdk
+          architecture: x64
 
-      # ---------- 3. Install Android SDK components ----------
+      # تأیید نسخه Java (اختیاری)
+      - name: Verify Java version
+        run: java -version
+
       - name: Install Android platform and accept licenses
         shell: bash
         run: |
@@ -48,7 +51,6 @@ jobs:
           yes | "${SDKMANAGER}" --licenses >/dev/null || true
           "${SDKMANAGER}" "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" "build-tools;${ANDROID_BUILD_TOOLS}"
 
-      # ---------- 4. Generate full Android project ----------
       - name: Create the complete Android project
         shell: bash
         run: |
@@ -85,7 +87,7 @@ jobs:
           kotlin.code.style=official
           EOF
 
-          # ---------- app/build.gradle.kts (with Navigation) ----------
+          # ---------- app/build.gradle.kts ----------
           cat > app/build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application")
@@ -128,20 +130,18 @@ jobs:
               implementation("androidx.compose.ui:ui-tooling-preview")
               implementation("androidx.compose.material3:material3")
               implementation("androidx.compose.material:material-icons-extended")
-              // Navigation for better UI flow
               implementation("androidx.navigation:navigation-compose:2.8.0")
               debugImplementation("androidx.compose.ui:ui-tooling")
               debugImplementation("androidx.compose.ui:ui-test-manifest")
           }
           EOF
 
-          # ---------- proguard-rules.pro ----------
           : > app/proguard-rules.pro
 
-          # ---------- resources ----------
           cat > app/src/main/res/values/strings.xml <<'EOF'
           <resources><string name="app_name">Resync</string></resources>
           EOF
+
           cat > app/src/main/res/values/themes.xml <<'EOF'
           <resources>
             <style name="Theme.Resync" parent="android:style/Theme.Material.Light.NoActionBar">
@@ -151,7 +151,6 @@ jobs:
           </resources>
           EOF
 
-          # ---------- AndroidManifest.xml ----------
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <application android:allowBackup="true" android:label="Resync" android:theme="@style/Theme.Resync" android:supportsRtl="true">
@@ -165,7 +164,7 @@ jobs:
           </manifest>
           EOF
 
-          # ---------- MainActivity.kt (completely redesigned) ----------
+          # ---------- MainActivity.kt (ساده‌سازی شده و خطاهای احتمالی رفع شده) ----------
           cat > app/src/main/java/com/resync/app/MainActivity.kt <<'EOF'
           package com.resync.app
 
@@ -178,8 +177,6 @@ jobs:
           import androidx.compose.animation.*
           import androidx.compose.animation.core.spring
           import androidx.compose.animation.core.tween
-          import androidx.compose.foundation.background
-          import androidx.compose.foundation.isSystemInDarkTheme
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.lazy.LazyColumn
           import androidx.compose.foundation.lazy.items
@@ -208,22 +205,15 @@ jobs:
           import java.time.LocalDate
           import kotlin.random.Random
 
-          // ---------- Data classes ----------
           data class Person(val name: String, val gender: String = "خانم")
           data class ScheduleRow(val person: Person, val date: LocalDate)
 
-          // ---------- Utility functions (unchanged) ----------
+          // ---------- Utilities ----------
           fun loadPeople(prefs: android.content.SharedPreferences): List<Person> =
               prefs.getString("people", "")!!.split("\\u001e").filter { it.isNotBlank() }.map {
                   val x = it.split("\\u001f")
                   Person(x[0], x.getOrElse(1) { "خانم" })
               }
-
-          fun savePeople(prefs: android.content.SharedPreferences, people: List<Person>) {
-              prefs.edit().putString("people", people.joinToString("\\u001e") { "${it.name}\\u001f${it.gender}" }).apply()
-          }
-
-          fun filterSetOf(p: Person) = setOf(p)
 
           fun formatOutput(rows: List<ScheduleRow>, emoji: String, template: String): String =
               rows.mapIndexed { i, r ->
@@ -278,26 +268,22 @@ jobs:
               val context = LocalContext.current
               val prefs = remember { context.getSharedPreferences("resync", Context.MODE_PRIVATE) }
 
-              // All state hoisted with rememberSaveable
-              var people by rememberSaveable(stateSaver = listSaver(
-                  save = { list -> list.map { "${it.name}\\u001f${it.gender}" } },
-                  restore = { list -> list.map { val parts = it.split("\\u001f"); Person(parts[0], parts.getOrElse(1) { "خانم" }) } }
-              )) { mutableStateOf(loadPeople(prefs)) }
-
-              var name by rememberSaveable { mutableStateOf("") }
-              var newGender by rememberSaveable { mutableStateOf("خانم") }
-              var darkOverride by rememberSaveable { mutableStateOf<Boolean?>(null) }
-              var query by rememberSaveable { mutableStateOf("") }
-              var searchOpen by rememberSaveable { mutableStateOf(false) }
-              var emoji by rememberSaveable { mutableStateOf(prefs.getString("emoji", "💎") ?: "💎") }
-              var startDate by rememberSaveable { mutableStateOf(LocalDate.parse(prefs.getString("date", LocalDate.now().toString()))) }
-              var previousSeed by rememberSaveable { mutableLongStateOf(prefs.getLong("seed", 0L)) }
-              var template by rememberSaveable { mutableStateOf(prefs.getString("template", "رسمی") ?: "رسمی") }
-              var rows by rememberSaveable { mutableStateOf(emptyList<ScheduleRow>()) }
-              var showDatePicker by rememberSaveable { mutableStateOf(false) }
-              var bulkDialog by rememberSaveable { mutableStateOf(false) }
-              var editTarget by rememberSaveable { mutableStateOf<Person?>(null) }
-              var deleteTarget by rememberSaveable { mutableStateOf<Person?>(null) }
+              // استفاده از mutableStateOf به‌جای rememberSaveable برای سادگی
+              var people by remember { mutableStateOf(loadPeople(prefs)) }
+              var name by remember { mutableStateOf("") }
+              var newGender by remember { mutableStateOf("خانم") }
+              var darkOverride by remember { mutableStateOf<Boolean?>(null) }
+              var query by remember { mutableStateOf("") }
+              var searchOpen by remember { mutableStateOf(false) }
+              var emoji by remember { mutableStateOf(prefs.getString("emoji", "💎") ?: "💎") }
+              var startDate by remember { mutableStateOf(LocalDate.parse(prefs.getString("date", LocalDate.now().toString()))) }
+              var previousSeed by remember { mutableLongStateOf(prefs.getLong("seed", 0L)) }
+              var template by remember { mutableStateOf(prefs.getString("template", "رسمی") ?: "رسمی") }
+              var rows by remember { mutableStateOf(emptyList<ScheduleRow>()) }
+              var showDatePicker by remember { mutableStateOf(false) }
+              var bulkDialog by remember { mutableStateOf(false) }
+              var editTarget by remember { mutableStateOf<Person?>(null) }
+              var deleteTarget by remember { mutableStateOf<Person?>(null) }
               val snackbarHostState = remember { SnackbarHostState() }
               val clipboard = LocalClipboardManager.current
 
@@ -355,7 +341,7 @@ jobs:
                       bottomBar = {
                           NavigationBar {
                               val items = listOf("افراد" to Icons.Default.People, "تولید" to Icons.Default.Settings, "خروجی" to Icons.Default.ListAlt)
-                              items.forEachIndexed { index, (label, icon) ->
+                              items.forEachIndexed { _, (label, icon) ->
                                   NavigationBarItem(
                                       selected = navController.currentDestination?.route == label,
                                       onClick = { navController.navigate(label) },
@@ -465,7 +451,7 @@ jobs:
                               TextButton(
                                   onClick = {
                                       val removed = deleteTarget!!
-                                      people = people - filterSetOf(removed)
+                                      people = people.filter { it != removed }
                                       persist()
                                       deleteTarget = null
                                   }
@@ -503,7 +489,7 @@ jobs:
               }
           }
 
-          // ---------- Screen Composables ----------
+          // ---------- Screens ----------
           @Composable
           fun PeopleScreen(
               people: List<Person>,
@@ -846,7 +832,7 @@ jobs:
           // ---------- Dialogs ----------
           @Composable
           fun BulkDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
-              var text by rememberSaveable { mutableStateOf("") }
+              var text by remember { mutableStateOf("") }
               AlertDialog(
                   onDismissRequest = onDismiss,
                   title = { Text("افزودن گروهی") },
@@ -866,8 +852,8 @@ jobs:
 
           @Composable
           fun EditDialog(person: Person, onDismiss: () -> Unit, onSave: (Person) -> Unit) {
-              var n by rememberSaveable { mutableStateOf(person.name) }
-              var g by rememberSaveable { mutableStateOf(person.gender) }
+              var n by remember { mutableStateOf(person.name) }
+              var g by remember { mutableStateOf(person.gender) }
               AlertDialog(
                   onDismissRequest = onDismiss,
                   title = { Text("ویرایش شخص") },
@@ -900,19 +886,19 @@ jobs:
           }
           EOF
 
-      # ---------- 5. Setup Gradle and generate wrapper ----------
-      - name: Setup Gradle and generate wrapper
+      # ---------- Setup Gradle wrapper ----------
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
-          # Disable cache cleanup on failure to avoid Java version mismatch
           cache-cleanup: always
 
-      # ---------- 6. Build APKs ----------
+      # ---------- Build APKs ----------
       - name: Build debug and release APKs
-        run: ./gradlew --no-daemon --console=plain --stacktrace :app:assembleDebug :app:assembleRelease
+        run: |
+          ./gradlew --no-daemon --console=plain --stacktrace :app:assembleDebug :app:assembleRelease
 
-      # ---------- 7. Upload artifacts ----------
+      # ---------- Upload artifacts ----------
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
@@ -922,9 +908,9 @@ jobs:
             app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
 
-      # ---------- 8. Commit generated source (optional) ----------
+      # ---------- Commit generated source ----------
       - name: Commit generated Android source
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore: generate Resync Android project with Material 3 redesign"
+          commit_message: "chore: generate Resync Android project (final fix)"
           file_pattern: "settings.gradle.kts build.gradle.kts gradle.properties app gradlew gradlew.bat gradle"
