@@ -9,7 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.isSystemInDarkTheme       // <-- ایمپورت اضافه شده
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -38,16 +38,56 @@ import androidx.navigation.compose.rememberNavController
 import java.time.LocalDate
 import kotlin.random.Random
 
-// ----- Data classes -----
 data class Person(val name: String, val gender: String = "خانم")
 data class ScheduleRow(val person: Person, val date: LocalDate)
 
-// ----- Utilities -----
 fun loadPeople(prefs: android.content.SharedPreferences): List<Person> =
     prefs.getString("people", "")!!.split("\\u001e").filter { it.isNotBlank() }.map {
         val x = it.split("\\u001f")
         Person(x[0], x.getOrElse(1) { "خانم" })
     }
+
+fun ordinal(n: Int): String {
+    return when (n) {
+        1 -> "اول"
+        2 -> "دوم"
+        3 -> "سوم"
+        4 -> "چهارم"
+        5 -> "پنجم"
+        6 -> "ششم"
+        7 -> "هفتم"
+        8 -> "هشتم"
+        9 -> "نهم"
+        10 -> "دهم"
+        11 -> "یازدهم"
+        12 -> "دوازدهم"
+        13 -> "سیزدهم"
+        14 -> "چهاردهم"
+        15 -> "پانزدهم"
+        16 -> "شانزدهم"
+        17 -> "هفدهم"
+        18 -> "هجدهم"
+        19 -> "نوزدهم"
+        20 -> "بیستم"
+        in 21..29 -> "بیست و ${ordinal(n - 20)}"
+        30 -> "سی‌ام"
+        in 31..39 -> "سی و ${ordinal(n - 30)}"
+        40 -> "چهلم"
+        in 41..49 -> "چهل و ${ordinal(n - 40)}"
+        50 -> "پنجاهم"
+        in 51..59 -> "پنجاه و ${ordinal(n - 50)}"
+        60 -> "شصتم"
+        in 61..69 -> "شصت و ${ordinal(n - 60)}"
+        70 -> "هفتادم"
+        in 71..79 -> "هفتاد و ${ordinal(n - 70)}"
+        80 -> "هشتادم"
+        in 81..89 -> "هشتاد و ${ordinal(n - 80)}"
+        90 -> "نودم"
+        in 91..99 -> "نود و ${ordinal(n - 90)}"
+        100 -> "صدم"
+        else -> "$n"
+    }
+}
 
 fun formatOutput(rows: List<ScheduleRow>, emoji: String, template: String): String =
     rows.mapIndexed { i, r ->
@@ -58,9 +98,6 @@ fun formatOutput(rows: List<ScheduleRow>, emoji: String, template: String): Stri
             else -> "$emoji نفر ${ordinal(i+1)} ${g}${r.person.name} — ${weekday(r.date)} ${jalali(r.date)}"
         }
     }.joinToString("\n\n")
-
-fun ordinal(n: Int) = listOf("اول", "دوم", "سوم", "چهارم", "پنجم", "ششم", "هفتم", "هشتم", "نهم", "دهم")
-    .getOrElse(n - 1) { n.toString() }
 
 fun weekday(d: LocalDate) = arrayOf("دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه", "جمعه", "شنبه", "یکشنبه")[d.dayOfWeek.value - 1]
 
@@ -84,7 +121,6 @@ fun jalali(d: LocalDate): String {
     return "%04d/%02d/%02d".format(jy, jm, jd)
 }
 
-// ----- Main Activity -----
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -171,31 +207,18 @@ fun ResyncApp() {
                     }
                 )
             },
-            bottomBar = {
-                NavigationBar {
-                    val items = listOf("افراد" to Icons.Default.People, "تولید" to Icons.Default.Settings, "خروجی" to Icons.Default.ListAlt)
-                    items.forEachIndexed { _, (label, icon) ->
-                        NavigationBarItem(
-                            selected = navController.currentDestination?.route == label,
-                            onClick = { navController.navigate(label) },
-                            icon = { Icon(icon, contentDescription = label) },
-                            label = { Text(label) }
-                        )
-                    }
-                }
-            },
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { padding ->
             NavHost(
                 navController = navController,
-                startDestination = "افراد",
+                startDestination = "people",
                 modifier = Modifier.padding(padding),
-                enterTransition = { slideInHorizontally { it } + fadeIn(tween(300)) },
-                exitTransition = { slideOutHorizontally { -it } + fadeOut(tween(300)) },
-                popEnterTransition = { slideInHorizontally { -it } + fadeIn(tween(300)) },
-                popExitTransition = { slideOutHorizontally { it } + fadeOut(tween(300)) }
+                enterTransition = { slideInHorizontally { it } + fadeIn(tween(400)) },
+                exitTransition = { slideOutHorizontally { -it } + fadeOut(tween(400)) },
+                popEnterTransition = { slideInHorizontally { -it } + fadeIn(tween(400)) },
+                popExitTransition = { slideOutHorizontally { it } + fadeOut(tween(400)) }
             ) {
-                composable("افراد") {
+                composable("people") {
                     PeopleScreen(
                         people = people,
                         name = name,
@@ -216,12 +239,14 @@ fun ResyncApp() {
                         onEdit = { editTarget = it },
                         onDelete = { deleteTarget = it },
                         onQueryChange = { query = it },
-                        onSearchToggle = { searchOpen = !searchOpen }
+                        onSearchToggle = { searchOpen = !searchOpen },
+                        onNext = { navController.navigate("settings") }
                     )
                 }
-                composable("تولید") {
-                    ScheduleScreen(
+                composable("settings") {
+                    SettingsOutputScreen(
                         people = people,
+                        rows = rows,
                         emoji = emoji,
                         startDate = startDate,
                         template = template,
@@ -231,14 +256,8 @@ fun ResyncApp() {
                         onTemplateChange = { template = it; persist() },
                         onGenerate = { generate(false) },
                         onReuseSeed = { generate(true) },
-                        onShowDatePicker = { showDatePicker = true }
-                    )
-                }
-                composable("خروجی") {
-                    OutputScreen(
-                        rows = rows,
-                        emoji = emoji,
-                        template = template,
+                        onShowDatePicker = { showDatePicker = true },
+                        onBack = { navController.popBackStack() },
                         clipboard = clipboard,
                         context = context
                     )
@@ -246,7 +265,7 @@ fun ResyncApp() {
             }
         }
 
-        // ----- Dialogs -----
+        // Dialogs
         if (bulkDialog) {
             BulkDialog(
                 onDismiss = { bulkDialog = false },
@@ -322,7 +341,6 @@ fun ResyncApp() {
     }
 }
 
-// ---------- Screens ----------
 @Composable
 fun PeopleScreen(
     people: List<Person>,
@@ -337,85 +355,118 @@ fun PeopleScreen(
     onEdit: (Person) -> Unit,
     onDelete: (Person) -> Unit,
     onQueryChange: (String) -> Unit,
-    onSearchToggle: () -> Unit
+    onSearchToggle: () -> Unit,
+    onNext: () -> Unit
 ) {
     val filtered = people.filter { it.name.contains(query.trim(), true) }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            AnimatedVisibility(
-                visible = searchOpen,
-                enter = expandVertically(spring()) + fadeIn(),
-                exit = shrinkVertically(spring()) + fadeOut()
-            ) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    modifier = Modifier.fillMaxWidth().animateContentSize(),
-                    singleLine = true,
-                    label = { Text("جست‌وجو در افراد") },
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) {
-                            IconButton(onClick = { onQueryChange("") }) {
-                                Icon(Icons.Default.Clear, "پاک کردن")
-                            }
-                        }
-                    }
-                )
-            }
-        }
-        item {
-            Card(
-                modifier = Modifier.animateContentSize(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(
-                        "افراد (${people.size})",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    if (filtered.isEmpty()) {
-                        Box(
-                            Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Default.People, null, Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.height(8.dp))
-                                Text(if (people.isEmpty()) "هنوز هیچ فردی اضافه نشده است" else "نتیجه‌ای پیدا نشد.")
-                                if (people.isEmpty()) {
-                                    Text("اولین نفر را از نوار پایین اضافه کنید.", style = MaterialTheme.typography.bodySmall)
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = 100.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                AnimatedVisibility(
+                    visible = searchOpen,
+                    enter = expandVertically(spring(stiffness = 300f)) + fadeIn(),
+                    exit = shrinkVertically(spring(stiffness = 300f)) + fadeOut()
+                ) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = onQueryChange,
+                        modifier = Modifier.fillMaxWidth().animateContentSize(),
+                        singleLine = true,
+                        label = { Text("جست‌وجو در افراد") },
+                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { onQueryChange("") }) {
+                                    Icon(Icons.Default.Clear, "پاک کردن")
                                 }
                             }
                         }
-                    } else {
-                        Column(
-                            Modifier.fillMaxWidth().heightIn(max = 300.dp)
-                                .verticalScroll(rememberScrollState())
-                                .animateContentSize(spring())
+                    )
+                }
+            }
+            item {
+                Card(
+                    modifier = Modifier.animateContentSize(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            filtered.forEach { p ->
-                                PersonItem(
-                                    person = p,
-                                    onEdit = { onEdit(p) },
-                                    onDelete = { onDelete(p) }
+                            Text(
+                                "افراد (${people.size})",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            if (people.isNotEmpty()) {
+                                AssistChip(
+                                    onClick = onNext,
+                                    label = { Text("مرحله بعد") },
+                                    leadingIcon = { Icon(Icons.Default.ArrowForward, null) },
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        labelColor = MaterialTheme.colorScheme.onPrimary
+                                    )
                                 )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        if (filtered.isEmpty()) {
+                            Box(
+                                Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.People, null, Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(if (people.isEmpty()) "هنوز هیچ فردی اضافه نشده است" else "نتیجه‌ای پیدا نشد.")
+                                    if (people.isEmpty()) {
+                                        Text("اولین نفر را از نوار پایین اضافه کنید.", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        } else {
+                            Column(
+                                Modifier.fillMaxWidth().heightIn(max = 300.dp)
+                                    .verticalScroll(rememberScrollState())
+                                    .animateContentSize(spring())
+                            ) {
+                                filtered.forEach { p ->
+                                    PersonItem(
+                                        person = p,
+                                        onEdit = { onEdit(p) },
+                                        onDelete = { onDelete(p) }
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
+            item { Spacer(Modifier.height(16.dp)) }
         }
-        item {
+
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+            shadowElevation = 8.dp,
+            tonalElevation = 3.dp,
+            color = MaterialTheme.colorScheme.surfaceContainer
+        ) {
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                Modifier
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .imePadding(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -425,7 +476,11 @@ fun PeopleScreen(
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     label = { Text("نام شخص") },
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    )
                 )
                 FilterChip(
                     selected = true,
@@ -438,15 +493,24 @@ fun PeopleScreen(
                         onGenderChange(next)
                     },
                     label = { Text(newGender) },
-                    leadingIcon = { Icon(Icons.Default.Person, null, Modifier.size(18.dp)) }
+                    leadingIcon = { Icon(Icons.Default.Person, null, Modifier.size(18.dp)) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    )
                 )
                 FilledIconButton(
                     onClick = onAddPerson,
-                    modifier = Modifier.size(56.dp)
+                    modifier = Modifier.size(52.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
                 ) {
-                    Icon(Icons.Default.Add, "افزودن")
+                    Icon(Icons.Default.Add, "افزودن", tint = MaterialTheme.colorScheme.onPrimary)
                 }
-                IconButton(onClick = onBulkAdd) {
+                IconButton(
+                    onClick = onBulkAdd,
+                    modifier = Modifier.size(52.dp)
+                ) {
                     Icon(Icons.Default.GroupAdd, "افزودن گروهی")
                 }
             }
@@ -458,8 +522,8 @@ fun PeopleScreen(
 fun PersonItem(person: Person, onEdit: () -> Unit, onDelete: () -> Unit) {
     AnimatedVisibility(
         visible = true,
-        enter = fadeIn(spring()) + scaleIn(initialScale = 0.6f, animationSpec = spring()),
-        exit = fadeOut() + scaleOut(targetScale = 0.6f)
+        enter = fadeIn(spring()) + scaleIn(initialScale = 0.7f, animationSpec = spring(stiffness = 200f)),
+        exit = fadeOut() + scaleOut(targetScale = 0.7f)
     ) {
         ElevatedCard(
             modifier = Modifier
@@ -487,13 +551,16 @@ fun PersonItem(person: Person, onEdit: () -> Unit, onDelete: () -> Unit) {
                     AssistChip(
                         onClick = {},
                         label = { Text(person.gender) },
-                        leadingIcon = { Icon(Icons.Default.Person, null, Modifier.size(16.dp)) }
+                        leadingIcon = { Icon(Icons.Default.Person, null, Modifier.size(16.dp)) },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
                     )
                 }
-                IconButton(onClick = onEdit, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = onEdit, modifier = Modifier.size(44.dp)) {
                     Icon(Icons.Default.Edit, "ویرایش ${person.name}")
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = onDelete, modifier = Modifier.size(44.dp)) {
                     Icon(Icons.Default.Delete, "حذف ${person.name}")
                 }
             }
@@ -501,9 +568,12 @@ fun PersonItem(person: Person, onEdit: () -> Unit, onDelete: () -> Unit) {
     }
 }
 
+// اصلاح: اضافه کردن OptIn برای ExperimentalAnimationApi
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
-fun ScheduleScreen(
+fun SettingsOutputScreen(
     people: List<Person>,
+    rows: List<ScheduleRow>,
     emoji: String,
     startDate: LocalDate,
     template: String,
@@ -513,8 +583,15 @@ fun ScheduleScreen(
     onTemplateChange: (String) -> Unit,
     onGenerate: () -> Unit,
     onReuseSeed: () -> Unit,
-    onShowDatePicker: () -> Unit
+    onShowDatePicker: () -> Unit,
+    onBack: () -> Unit,
+    clipboard: androidx.compose.ui.platform.ClipboardManager,
+    context: Context
 ) {
+    val output = remember(rows, emoji, template) {
+        if (rows.isEmpty()) "" else formatOutput(rows, emoji, template)
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -525,7 +602,16 @@ fun ScheduleScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("تنظیمات قرعه‌کشی", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("تنظیمات قرعه‌کشی", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Default.ArrowBack, "بازگشت")
+                        }
+                    }
                     OutlinedTextField(
                         value = emoji,
                         onValueChange = onEmojiChange,
@@ -573,96 +659,114 @@ fun ScheduleScreen(
                             Text("Seed قبلی")
                         }
                     }
-                }
-            }
-        }
-        if (people.isEmpty()) {
-            item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                    Column(Modifier.padding(16.dp)) {
-                        Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error)
-                        Spacer(Modifier.height(8.dp))
-                        Text("هیچ فردی در لیست نیست. لطفاً ابتدا افراد را اضافه کنید.")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun OutputScreen(
-    rows: List<ScheduleRow>,
-    emoji: String,
-    template: String,
-    clipboard: androidx.compose.ui.platform.ClipboardManager,
-    context: Context
-) {
-    val output = remember(rows, emoji, template) {
-        if (rows.isEmpty()) "" else formatOutput(rows, emoji, template)
-    }
-
-    Box(
-        Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        if (rows.isEmpty()) {
-            Column(
-                Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(Icons.Default.ListAlt, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.height(16.dp))
-                Text("هنوز برنامه‌ای تولید نشده است.", style = MaterialTheme.typography.titleMedium)
-                Text("به تب «تولید» بروید و یک ترتیب جدید ایجاد کنید.", style = MaterialTheme.typography.bodyMedium)
-            }
-        } else {
-            Card(
-                modifier = Modifier.fillMaxWidth().animateContentSize(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("خروجی برنامه", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = output,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                            .animateContentSize()
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
-                    ) {
-                        TextButton(onClick = { clipboard.setText(AnnotatedString(output)) }) {
-                            Icon(Icons.Default.ContentCopy, null)
-                            Text("کپی")
-                        }
-                        TextButton(onClick = {
-                            context.startActivity(
-                                Intent.createChooser(
-                                    Intent(Intent.ACTION_SEND).setType("text/plain")
-                                        .putExtra(Intent.EXTRA_TEXT, output),
-                                    "اشتراک‌گذاری"
-                                )
+                    if (people.isEmpty()) {
+                        AssistChip(
+                            onClick = { /* بازگشت */ },
+                            label = { Text("ابتدا افراد را اضافه کنید") },
+                            leadingIcon = { Icon(Icons.Default.Warning, null) },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                labelColor = MaterialTheme.colorScheme.onErrorContainer
                             )
-                        }) {
-                            Icon(Icons.AutoMirrored.Filled.Send, null)
-                            Text("اشتراک‌گذاری")
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            AnimatedContent(
+                targetState = rows,
+                transitionSpec = {
+                    fadeIn(tween(300)) + scaleIn(initialScale = 0.95f, animationSpec = tween(300)) with
+                    fadeOut(tween(200)) + scaleOut(targetScale = 0.95f, animationSpec = tween(200))
+                },
+                label = "output"
+            ) { currentRows ->
+                if (currentRows.isEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().animateContentSize(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Column(
+                            Modifier.padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Default.ListAlt, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.height(12.dp))
+                            Text("هنوز برنامه‌ای تولید نشده.", style = MaterialTheme.typography.titleMedium)
+                            Text("روی «ترتیب جدید» بزنید.", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                } else {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().animateContentSize(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("پیش‌نمایش خروجی", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = output,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 300.dp)
+                                    .verticalScroll(rememberScrollState())
+                                    .animateContentSize()
+                            )
                         }
                     }
                 }
             }
         }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onBack,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.ArrowBack, null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("برگشت")
+                }
+                Button(
+                    onClick = { clipboard.setText(AnnotatedString(output)) },
+                    enabled = rows.isNotEmpty(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.ContentCopy, null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("کپی")
+                }
+                Button(
+                    onClick = {
+                        context.startActivity(
+                            Intent.createChooser(
+                                Intent(Intent.ACTION_SEND).setType("text/plain")
+                                    .putExtra(Intent.EXTRA_TEXT, output),
+                                "اشتراک‌گذاری"
+                            )
+                        )
+                    },
+                    enabled = rows.isNotEmpty(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Send, null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("اشتراک")
+                }
+            }
+        }
+        item { Spacer(Modifier.height(8.dp)) }
     }
 }
 
-// ---------- Dialogs ----------
 @Composable
 fun BulkDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
