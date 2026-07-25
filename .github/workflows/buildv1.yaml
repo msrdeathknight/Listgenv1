@@ -155,6 +155,7 @@ jobs:
 
           import android.content.Context
           import android.content.Intent
+          import android.os.Build
           import android.os.Bundle
           import android.provider.Settings
           import androidx.activity.ComponentActivity
@@ -176,6 +177,8 @@ jobs:
           import androidx.compose.material.icons.automirrored.filled.Send
           import androidx.compose.material.icons.filled.*
           import androidx.compose.material3.*
+          import androidx.compose.material3.dynamicDarkColorScheme
+          import androidx.compose.material3.dynamicLightColorScheme
           import androidx.compose.runtime.*
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
@@ -193,7 +196,7 @@ jobs:
           import java.time.format.DateTimeFormatter
           import kotlin.random.Random
 
-          data class Person(val name: String, val gender: String = "بدون جنسیت")
+          data class Person(val name: String, val gender: String = "خانم")
           data class ScheduleRow(val person: Person, val date: LocalDate)
 
           class MainActivity : ComponentActivity() {
@@ -209,6 +212,8 @@ jobs:
               val prefs = remember { context.getSharedPreferences("resync", Context.MODE_PRIVATE) }
               var people by remember { mutableStateOf(loadPeople(prefs)) }
               var name by remember { mutableStateOf("") }
+              var newGender by remember { mutableStateOf("خانم") }
+              var darkOverride by remember { mutableStateOf<Boolean?>(null) }
               var query by remember { mutableStateOf("") }
               var emoji by remember { mutableStateOf(prefs.getString("emoji", "💎") ?: "💎") }
               var startDate by remember { mutableStateOf(LocalDate.parse(prefs.getString("date", LocalDate.now().toString()))) }
@@ -235,13 +240,27 @@ jobs:
               val output = formatOutput(rows, emoji, template)
               val filtered = people.filter { it.name.contains(query.trim(), true) }
 
-              MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+              val dark = darkOverride ?: isSystemInDarkTheme()
+              val colors = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+              } else if (dark) darkColorScheme() else lightColorScheme()
+              MaterialTheme(colorScheme = colors, shapes = Shapes(
+                extraSmall = RoundedCornerShape(12.dp), small = RoundedCornerShape(16.dp),
+                medium = RoundedCornerShape(24.dp), large = RoundedCornerShape(28.dp), extraLarge = RoundedCornerShape(32.dp)
+              )) {
                 Scaffold(
-                  topBar = { CenterAlignedTopAppBar(title = { Text("Resync", fontWeight = FontWeight.Bold) }, actions = { IconButton(onClick = { showSettings = !showSettings }) { Icon(Icons.Default.Settings, "تنظیمات") } }) },
+                  topBar = { MediumTopAppBar(
+                    title = { Column { Text("Resync", fontWeight = FontWeight.Bold); Text("${people.size} نفر در فهرست", style = MaterialTheme.typography.labelMedium) } },
+                    actions = {
+                      IconButton(onClick = { darkOverride = !(darkOverride ?: isSystemInDarkTheme()) }) { Icon(if (dark) Icons.Default.LightMode else Icons.Default.DarkMode, "تغییر حالت نمایش") }
+                      IconButton(onClick = { showSettings = !showSettings }) { Icon(Icons.Default.Tune, "تنظیمات") }
+                    }
+                  ) },
                   snackbarHost = { SnackbarHost(snackbar) },
                   bottomBar = { Surface(tonalElevation = 3.dp) { Row(Modifier.padding(10.dp).imePadding(), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(value = name, onValueChange = { name = it }, modifier = Modifier.weight(1f), singleLine = true, label = { Text("نام شخص") })
-                    IconButton(onClick = { val n = name.trim(); if (n.isNotEmpty() && people.none { it.name == n }) { people = people + Person(n); name = ""; persist() } }) { Icon(Icons.Default.Add, "افزودن") }
+                    FilterChip(selected = true, onClick = { newGender = if (newGender == "خانم") "آقا" else if (newGender == "آقا") "بدون جنسیت" else "خانم" }, label = { Text(newGender) }, leadingIcon = { Icon(Icons.Default.Person, null, Modifier.size(18.dp)) })
+                    FilledIconButton(onClick = { val n = name.trim(); if (n.isNotEmpty() && people.none { it.name == n }) { people = people + Person(n, newGender); name = ""; persist() } }) { Icon(Icons.Default.Add, "افزودن") }
                     IconButton(onClick = { bulkDialog = true }) { Icon(Icons.Default.GroupAdd, "افزودن گروهی") }
                   } } }
                 ) { pad ->
@@ -272,10 +291,18 @@ jobs:
               if (showDatePicker) { val state=rememberDatePickerState(initialSelectedDateMillis=startDate.toEpochDay()*86400000); DatePickerDialog(onDismissRequest={showDatePicker=false}, confirmButton={ TextButton(onClick={ state.selectedDateMillis?.let { startDate=LocalDate.ofEpochDay(it/86400000); persist() }; showDatePicker=false }) { Text("تأیید") } }, dismissButton={TextButton(onClick={showDatePicker=false}){Text("انصراف")}}) { DatePicker(state=state) } }
             }
 
-          @Composable fun PersonLine(p: Person, onEdit:()->Unit, onDelete:()->Unit) = Row(Modifier.fillMaxWidth().padding(vertical=6.dp), verticalAlignment=Alignment.CenterVertically) { Icon(Icons.Default.Person, null); Spacer(Modifier.width(8.dp)); Column(Modifier.weight(1f)) { Text(p.name, fontWeight=FontWeight.Medium); Text(p.gender, style=MaterialTheme.typography.labelSmall) }; IconButton(onClick=onEdit){Icon(Icons.Default.Edit,null)}; IconButton(onClick=onDelete){Icon(Icons.Default.Delete,null)} }
+          @Composable fun PersonLine(p: Person, onEdit:()->Unit, onDelete:()->Unit) {
+            ElevatedCard(modifier=Modifier.fillMaxWidth().padding(vertical=4.dp), shape=RoundedCornerShape(20.dp)) {
+              Row(Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=10.dp), verticalAlignment=Alignment.CenterVertically) {
+                Surface(color=MaterialTheme.colorScheme.primaryContainer, shape=RoundedCornerShape(16.dp), modifier=Modifier.size(46.dp)) { Box(contentAlignment=Alignment.Center) { Text(p.name.take(1), style=MaterialTheme.typography.titleLarge, fontWeight=FontWeight.Bold) } }
+                Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(p.name, fontWeight=FontWeight.SemiBold); AssistChip(onClick={}, label={Text(p.gender)}, leadingIcon={Icon(Icons.Default.Person, null, Modifier.size(16.dp))}) }
+                IconButton(onClick=onEdit, modifier=Modifier.size(48.dp)){Icon(Icons.Default.Edit,"ویرایش ${p.name}")}; IconButton(onClick=onDelete, modifier=Modifier.size(48.dp)){Icon(Icons.Default.Delete,"حذف ${p.name}")}
+              }
+            }
+          }
           @Composable fun BulkDialog(onDismiss:()->Unit, onAdd:(String)->Unit) { var text by remember{mutableStateOf("")}; AlertDialog(onDismissRequest=onDismiss,title={Text("افزودن گروهی")},text={OutlinedTextField(value=text,onValueChange={text=it},label={Text("نام‌ها با کاما یا خط جدید")},minLines=4)},confirmButton={TextButton(onClick={onAdd(text)}){Text("افزودن")}},dismissButton={TextButton(onClick=onDismiss){Text("انصراف")}}) }
           @Composable fun EditDialog(person:Person,onDismiss:()->Unit,onSave:(Person)->Unit) { var n by remember{mutableStateOf(person.name)}; var g by remember{mutableStateOf(person.gender)}; AlertDialog(onDismissRequest=onDismiss,title={Text("ویرایش شخص")},text={Column { OutlinedTextField(n,{n=it},label={Text("نام")}); listOf("خانم","آقا","بدون جنسیت").forEach { Row(verticalAlignment=Alignment.CenterVertically){RadioButton(g==it,{g=it});Text(it)} } }},confirmButton={TextButton(onClick={if(n.trim().isNotEmpty())onSave(Person(n.trim(),g))}){Text("ذخیره")}},dismissButton={TextButton(onClick=onDismiss){Text("انصراف")}}) }
-          fun loadPeople(p:android.content.SharedPreferences):List<Person> = p.getString("people", "")!!.split("\\u001e").filter{it.isNotBlank()}.map { val x=it.split("\\u001f"); Person(x[0],x.getOrElse(1){"بدون جنسیت"}) }
+          fun loadPeople(p:android.content.SharedPreferences):List<Person> = p.getString("people", "")!!.split("\\u001e").filter{it.isNotBlank()}.map { val x=it.split("\\u001f"); Person(x[0],x.getOrElse(1){"خانم"}) }
           fun filterSetOf(p:Person)=setOf(p)
           fun formatOutput(rows:List<ScheduleRow>,emoji:String,t:String):String = rows.mapIndexed { i,r -> val g=if(r.person.gender=="بدون جنسیت") "" else "${r.person.gender} "; when(t){"مینیمال"->"$emoji ${i+1}. ${r.person.name} — ${jalali(r.date)}";"تلگرام"->"$emoji *نفر ${ordinal(i+1)}* ${g}${r.person.name}\n📅 ${weekday(r.date)} ${jalali(r.date)}";else->"$emoji نفر ${ordinal(i+1)} ${g}${r.person.name} — ${weekday(r.date)} ${jalali(r.date)}"} }.joinToString("\n\n")
           fun ordinal(n:Int)=listOf("اول","دوم","سوم","چهارم","پنجم","ششم","هفتم","هشتم","نهم","دهم").getOrElse(n-1){n.toString()}
