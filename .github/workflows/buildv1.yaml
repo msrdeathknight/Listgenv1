@@ -161,6 +161,7 @@ jobs:
           import androidx.activity.ComponentActivity
           import androidx.activity.compose.setContent
           import androidx.compose.animation.AnimatedVisibility
+          import androidx.compose.animation.Crossfade
           import androidx.compose.animation.core.spring
           import androidx.compose.animation.expandVertically
           import androidx.compose.animation.fadeIn
@@ -169,6 +170,8 @@ jobs:
           import androidx.compose.foundation.background
           import androidx.compose.foundation.clickable
           import androidx.compose.foundation.isSystemInDarkTheme
+          import androidx.compose.foundation.verticalScroll
+          import androidx.compose.foundation.rememberScrollState
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.lazy.LazyColumn
           import androidx.compose.foundation.lazy.items
@@ -182,6 +185,7 @@ jobs:
           import androidx.compose.runtime.*
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.animateContentSize
           import androidx.compose.ui.draw.clip
           import androidx.compose.ui.platform.LocalClipboardManager
           import androidx.compose.ui.text.AnnotatedString
@@ -215,12 +219,13 @@ jobs:
               var newGender by remember { mutableStateOf("خانم") }
               var darkOverride by remember { mutableStateOf<Boolean?>(null) }
               var query by remember { mutableStateOf("") }
+              var searchOpen by remember { mutableStateOf(false) }
               var emoji by remember { mutableStateOf(prefs.getString("emoji", "💎") ?: "💎") }
               var startDate by remember { mutableStateOf(LocalDate.parse(prefs.getString("date", LocalDate.now().toString()))) }
               var previousSeed by remember { mutableLongStateOf(prefs.getLong("seed", 0L)) }
               var template by remember { mutableStateOf(prefs.getString("template", "رسمی") ?: "رسمی") }
               var rows by remember { mutableStateOf(emptyList<ScheduleRow>()) }
-              var showList by remember { mutableStateOf(true) }
+              var showList by remember { mutableStateOf(false) }
               var showSettings by remember { mutableStateOf(false) }
               var showDatePicker by remember { mutableStateOf(false) }
               var bulkDialog by remember { mutableStateOf(false) }
@@ -252,8 +257,8 @@ jobs:
                   topBar = { MediumTopAppBar(
                     title = { Column { Text("Resync", fontWeight = FontWeight.Bold); Text("${people.size} نفر در فهرست", style = MaterialTheme.typography.labelMedium) } },
                     actions = {
+                      IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) { Icon(if (searchOpen) Icons.Default.Close else Icons.Default.Search, if (searchOpen) "بستن جست‌وجو" else "جست‌وجو") }
                       IconButton(onClick = { darkOverride = !dark }) { Icon(if (dark) Icons.Default.LightMode else Icons.Default.DarkMode, "تغییر حالت نمایش") }
-                      IconButton(onClick = { showSettings = !showSettings }) { Icon(Icons.Default.Tune, "تنظیمات") }
                     }
                   ) },
                   snackbarHost = { SnackbarHost(snackbar) },
@@ -266,19 +271,26 @@ jobs:
                 ) { pad ->
                   LazyColumn(Modifier.padding(pad).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     item { Text("مدیریت نوبت‌دهی و قرعه‌کشی", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
-                    item { OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("جست‌وجو در افراد") }, leadingIcon = { Icon(Icons.Default.Search, null) }) }
+                    item { AnimatedVisibility(visible = searchOpen, enter = expandVertically(spring()) + fadeIn(), exit = shrinkVertically(spring()) + fadeOut()) { OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth().animateContentSize(), singleLine = true, label = { Text("جست‌وجو در افراد") }, leadingIcon = { Icon(Icons.Default.Search, null) }, trailingIcon = { IconButton(onClick = { query = "" }) { Icon(Icons.Default.Clear, "پاک کردن") } }) } }
                     item { Card { Column(Modifier.padding(16.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { Text("افراد (${people.size})", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f)); IconButton(onClick = { showList = !showList }) { Icon(if(showList) Icons.Default.VisibilityOff else Icons.Default.Visibility, null) } }
                       AnimatedVisibility(showList, enter = expandVertically(spring()) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                        Column { if (filtered.isEmpty()) Text(if (people.isEmpty()) "هنوز هیچ فردی اضافه نشده است. اولین نفر را اضافه کنید." else "نتیجه‌ای پیدا نشد.", modifier = Modifier.padding(vertical = 16.dp))
-                        else filtered.forEach { p -> PersonLine(p, onEdit = { editTarget = p }, onDelete = { deleteTarget = p }) } }
+                        if (filtered.isEmpty()) {
+                          Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.People, null, Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.height(8.dp)); Text(if (people.isEmpty()) "هنوز هیچ فردی اضافه نشده است" else "نتیجه‌ای پیدا نشد.")
+                            if (people.isEmpty()) Text("اولین نفر را از نوار پایین اضافه کنید.", style = MaterialTheme.typography.bodySmall)
+                          }
+                        } else Column(Modifier.fillMaxWidth().heightIn(max = 246.dp).verticalScroll(rememberScrollState()).animateContentSize(spring())) {
+                          filtered.forEach { p -> PersonLine(p, onEdit = { editTarget = p }, onDelete = { deleteTarget = p }) }
+                        }
                       }
                     } } }
                     item { Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                      Row { Text("تنظیمات قرعه‌کشی", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f)); Text(emoji, fontSize = 24.sp) }
-                      if (showSettings) { OutlinedTextField(value = emoji, onValueChange = { emoji = it.take(8); persist() }, label = { Text("ایموجی") }, singleLine = true)
+                      Row(verticalAlignment = Alignment.CenterVertically) { Text("تنظیمات قرعه‌کشی", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f)); Text(emoji, fontSize = 24.sp); TextButton(onClick = { showSettings = !showSettings }) { Text(if (showSettings) "بستن" else "تنظیم") } }
+                      AnimatedVisibility(visible = showSettings, enter = expandVertically(spring()) + fadeIn(), exit = shrinkVertically(spring()) + fadeOut()) { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(value = emoji, onValueChange = { emoji = it.take(8); persist() }, label = { Text("ایموجی") }, singleLine = true)
                         OutlinedButton(onClick = { showDatePicker = true }) { Icon(Icons.Default.DateRange, null); Spacer(Modifier.width(8.dp)); Text("تاریخ شروع: ${jalali(startDate)}") }
                         SingleChoiceSegmentedButtonRow { listOf("رسمی", "مینیمال", "تلگرام").forEachIndexed { i, t -> SegmentedButton(selected = template == t, onClick = { template=t; persist() }, shape = SegmentedButtonDefaults.itemShape(i, 3)) { Text(t) } } }
-                      }
+                      } }
                       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { generate(false) }, enabled = people.isNotEmpty(), modifier = Modifier.weight(1f)) { Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(6.dp)); Text("ترتیب جدید") }; OutlinedButton(onClick = { generate(true) }, enabled = people.isNotEmpty() && previousSeed != 0L, modifier = Modifier.weight(1f)) { Text("Seed قبلی") } }
                     } } }
                     if (rows.isNotEmpty()) item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) { Column(Modifier.padding(16.dp)) { Text("خروجی برنامه", style = MaterialTheme.typography.titleLarge); Spacer(Modifier.height(8.dp)); Text(output); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { clipboard.setText(AnnotatedString(output)) }) { Icon(Icons.Default.ContentCopy, null); Text("کپی") }; TextButton(onClick = { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, output), "اشتراک‌گذاری")) }) { Icon(Icons.AutoMirrored.Filled.Send, null); Text("اشتراک‌گذاری") } } } } }
@@ -292,7 +304,7 @@ jobs:
             }
 
           @Composable fun PersonLine(p: Person, onEdit:()->Unit, onDelete:()->Unit) {
-            ElevatedCard(modifier=Modifier.fillMaxWidth().padding(vertical=4.dp), shape=RoundedCornerShape(20.dp)) {
+            ElevatedCard(modifier=Modifier.fillMaxWidth().padding(vertical=4.dp).animateContentSize(spring()), shape=RoundedCornerShape(20.dp)) {
               Row(Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=10.dp), verticalAlignment=Alignment.CenterVertically) {
                 Surface(color=MaterialTheme.colorScheme.primaryContainer, shape=RoundedCornerShape(16.dp), modifier=Modifier.size(46.dp)) { Box(contentAlignment=Alignment.Center) { Text(p.name.take(1), style=MaterialTheme.typography.titleLarge, fontWeight=FontWeight.Bold) } }
                 Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(p.name, fontWeight=FontWeight.SemiBold); AssistChip(onClick={}, label={Text(p.gender)}, leadingIcon={Icon(Icons.Default.Person, null, Modifier.size(16.dp))}) }
