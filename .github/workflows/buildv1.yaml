@@ -162,6 +162,7 @@ jobs:
           import androidx.activity.compose.setContent
           import androidx.compose.animation.AnimatedVisibility
           import androidx.compose.animation.Crossfade
+          import androidx.compose.animation.animateContentSize
           import androidx.compose.animation.core.spring
           import androidx.compose.animation.expandVertically
           import androidx.compose.animation.fadeIn
@@ -185,7 +186,6 @@ jobs:
           import androidx.compose.runtime.*
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
-          import androidx.compose.ui.draw.animateContentSize
           import androidx.compose.ui.draw.clip
           import androidx.compose.ui.platform.LocalClipboardManager
           import androidx.compose.ui.text.AnnotatedString
