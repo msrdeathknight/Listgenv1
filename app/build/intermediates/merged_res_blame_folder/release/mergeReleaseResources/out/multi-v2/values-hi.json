@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.resync.app-mergeReleaseResources-42:/values-hi/values-hi.xml",
+            "outputFile": "com.resync.app-mergeReleaseResources-48:/values-hi/values-hi.xml",
             "map": [
                 {
                     "source": "/home/runner/.gradle/caches/8.9/transforms/c427987a2fbc288159350c110a5a755d/transformed/foundation-release/res/values-hi/values-hi.xml",

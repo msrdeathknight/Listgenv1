@@ -20,7 +20,7 @@
 15-->[androidx.core:core:1.15.0] /home/runner/.gradle/caches/8.9/transforms/cd46abea9d16e862d0dfae7b2db85bca/transformed/core-1.15.0/AndroidManifest.xml:26:22-94
 16
 17    <application
-17-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:2:3-8:17
+17-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:2:3-9:17
 18        android:allowBackup="true"
 18-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:2:16-42
 19        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
@@ -34,20 +34,20 @@
 24        android:theme="@style/Theme.Resync" >
 24-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:2:66-101
 25        <activity
-25-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:3:5-7:16
+25-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:3:5-8:16
 26            android:name="com.resync.app.MainActivity"
 26-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:3:15-43
 27            android:exported="true" >
 27-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:3:44-67
 28            <intent-filter>
-28-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:4:7-6:23
+28-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:4:7-7:23
 29                <action android:name="android.intent.action.MAIN" />
 29-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:5:9-60
 29-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:5:17-58
 30
 31                <category android:name="android.intent.category.LAUNCHER" />
-31-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:5:60-119
-31-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:5:70-117
+31-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:6:9-68
+31-->/home/runner/work/Listgenv1/Listgenv1/app/src/main/AndroidManifest.xml:6:19-66
 32            </intent-filter>
 33        </activity>
 34        <activity

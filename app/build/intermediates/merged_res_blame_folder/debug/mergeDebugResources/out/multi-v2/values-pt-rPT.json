@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.resync.app-mergeDebugResources-46:/values-pt-rPT/values-pt-rPT.xml",
+            "outputFile": "com.resync.app-mergeDebugResources-52:/values-pt-rPT/values-pt-rPT.xml",
             "map": [
                 {
                     "source": "/home/runner/.gradle/caches/8.9/transforms/123b61d37aa34158efe79f300ccd3bc3/transformed/ui-release/res/values-pt-rPT/values-pt-rPT.xml",
