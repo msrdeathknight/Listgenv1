@@ -7,10 +7,6 @@ on:
         description: "Version name for the generated APK"
         required: false
         default: "1.0.0"
-      release_tag:
-        description: "Create a GitHub Release with this tag (optional)"
-        required: false
-        default: ""
   push:
     paths:
       - ".github/workflows/build-resync.yml"
@@ -18,77 +14,61 @@ on:
 permissions:
   contents: write
 
-env:
-  GRADLE_VERSION: "8.9"
-  ANDROID_COMPILE_SDK: "35"
-  ANDROID_BUILD_TOOLS: "35.0.0"
-  # Version name from input or default
-  VERSION_NAME: ${{ inputs.version_name || '1.0.0' }}
-
 jobs:
-  build:
-    name: Generate Resync project & build APK
+  create-and-build:
+    name: Generate Resync and build APK
     runs-on: ubuntu-latest
-    steps:
-      # Step 1: Checkout repository
-      - name: Checkout code
-        uses: actions/checkout@v5
+    env:
+      GRADLE_VERSION: "8.9"
+      ANDROID_COMPILE_SDK: "35"
+      ANDROID_BUILD_TOOLS: "35.0.0"
+      VERSION_NAME: ${{ inputs.version_name || '1.0.0' }}
+      # Force Node.js 24 for all actions (fix deprecation warning)
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-      # Step 2: Setup Java 17 (required for Android Gradle plugin 8.x)
+    steps:
+      # ---------- 1. Checkout ----------
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # ---------- 2. Setup Java 17 (critical) ----------
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      # Step 3: Setup Gradle and Android SDK with caching
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: ${{ env.GRADLE_VERSION }}
-
-      # Step 4: Install Android SDK components and accept licenses
-      # Android SDK is pre-installed on GitHub runners; we just need to install needed platforms.
-      - name: Install Android SDK components
+      # ---------- 3. Install Android SDK components ----------
+      - name: Install Android platform and accept licenses
         shell: bash
         run: |
           set -euo pipefail
-          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          # If not present, try to find it
-          if [ ! -f "$SDKMANAGER" ]; then
-            SDKMANAGER="$(find "${ANDROID_HOME}" -type f -name sdkmanager | head -n 1)"
-          fi
-          test -n "${SDKMANAGER}" || { echo "sdkmanager not found"; exit 1; }
+          SDKMANAGER="$(find "${ANDROID_HOME}" -type f -name sdkmanager | head -n 1)"
+          test -n "${SDKMANAGER}"
           yes | "${SDKMANAGER}" --licenses >/dev/null || true
           "${SDKMANAGER}" "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" "build-tools;${ANDROID_BUILD_TOOLS}"
 
-      # Step 5: Create the complete Android project structure
-      - name: Generate Android project source code
+      # ---------- 4. Generate full Android project ----------
+      - name: Create the complete Android project
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p app/src/main/java/com/resync/app app/src/main/res/values app/src/main/res/xml
+          mkdir -p app/src/main/java/com/resync/app app/src/main/res/values app/src/main/res/xml .github
 
-          # ---------- Gradle root files ----------
+          # ---------- settings.gradle.kts ----------
           cat > settings.gradle.kts <<'EOF'
           pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
           }
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
+              repositories { google(); mavenCentral() }
           }
           rootProject.name = "Resync"
           include(":app")
           EOF
 
+          # ---------- build.gradle.kts (project) ----------
           cat > build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application") version "8.7.3" apply false
@@ -97,6 +77,7 @@ jobs:
           }
           EOF
 
+          # ---------- gradle.properties ----------
           cat > gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
           org.gradle.parallel=true
@@ -104,7 +85,7 @@ jobs:
           kotlin.code.style=official
           EOF
 
-          # ---------- App module build.gradle ----------
+          # ---------- app/build.gradle.kts (with Navigation) ----------
           cat > app/build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application")
@@ -115,7 +96,6 @@ jobs:
           android {
               namespace = "com.resync.app"
               compileSdk = 35
-
               defaultConfig {
                   applicationId = "com.resync.app"
                   minSdk = 26
@@ -123,45 +103,24 @@ jobs:
                   versionCode = 1
                   versionName = System.getenv("VERSION_NAME") ?: "1.0.0"
               }
-
-              signingConfigs {
-                  // Create a debug keystore for release builds (so we can install the release APK directly)
-                  create("release") {
-                      storeFile = file("debug.keystore")
-                      storePassword = "android"
-                      keyAlias = "androiddebugkey"
-                      keyPassword = "android"
-                  }
-              }
-
               buildTypes {
                   release {
                       isMinifyEnabled = false
                       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-                      signingConfig = signingConfigs.getByName("release")
                   }
               }
-
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
               }
-
-              kotlinOptions {
-                  jvmTarget = "17"
-              }
-
-              buildFeatures {
-                  compose = true
-                  buildConfig = true
-              }
+              kotlinOptions { jvmTarget = "17" }
+              buildFeatures { compose = true; buildConfig = true }
           }
 
           dependencies {
               val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
               implementation(composeBom)
               androidTestImplementation(composeBom)
-
               implementation("androidx.core:core-ktx:1.15.0")
               implementation("androidx.activity:activity-compose:1.10.0")
               implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
@@ -169,51 +128,44 @@ jobs:
               implementation("androidx.compose.ui:ui-tooling-preview")
               implementation("androidx.compose.material3:material3")
               implementation("androidx.compose.material:material-icons-extended")
-              implementation("androidx.navigation:navigation-compose:2.8.0")  // Added for better navigation
-
+              // Navigation for better UI flow
+              implementation("androidx.navigation:navigation-compose:2.8.0")
               debugImplementation("androidx.compose.ui:ui-tooling")
               debugImplementation("androidx.compose.ui:ui-test-manifest")
           }
           EOF
 
+          # ---------- proguard-rules.pro ----------
           : > app/proguard-rules.pro
 
-          # ---------- Resources ----------
+          # ---------- resources ----------
           cat > app/src/main/res/values/strings.xml <<'EOF'
-          <resources>
-              <string name="app_name">Resync</string>
-          </resources>
+          <resources><string name="app_name">Resync</string></resources>
           EOF
-
           cat > app/src/main/res/values/themes.xml <<'EOF'
           <resources>
-              <style name="Theme.Resync" parent="android:style/Theme.Material.Light.NoActionBar">
-                  <item name="android:fontFamily">sans</item>
-                  <item name="android:windowLightStatusBar">true</item>
-              </style>
+            <style name="Theme.Resync" parent="android:style/Theme.Material.Light.NoActionBar">
+              <item name="android:fontFamily">sans</item>
+              <item name="android:windowLightStatusBar">true</item>
+            </style>
           </resources>
           EOF
 
+          # ---------- AndroidManifest.xml ----------
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <application
-                  android:allowBackup="true"
-                  android:label="Resync"
-                  android:theme="@style/Theme.Resync"
-                  android:supportsRtl="true">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
+            <application android:allowBackup="true" android:label="Resync" android:theme="@style/Theme.Resync" android:supportsRtl="true">
+              <activity android:name=".MainActivity" android:exported="true">
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN"/>
+                  <category android:name="android.intent.category.LAUNCHER"/>
+                </intent-filter>
+              </activity>
+            </application>
           </manifest>
           EOF
 
-          # ---------- MainActivity.kt (the complete Kotlin code) ----------
+          # ---------- MainActivity.kt (completely redesigned) ----------
           cat > app/src/main/java/com/resync/app/MainActivity.kt <<'EOF'
           package com.resync.app
 
@@ -248,9 +200,8 @@ jobs:
           import androidx.compose.ui.platform.LocalLayoutDirection
           import androidx.compose.ui.text.AnnotatedString
           import androidx.compose.ui.text.font.FontWeight
-          import androidx.compose.ui.unit.dp
           import androidx.compose.ui.unit.LayoutDirection
-          import androidx.navigation.NavType
+          import androidx.compose.ui.unit.dp
           import androidx.navigation.compose.NavHost
           import androidx.navigation.compose.composable
           import androidx.navigation.compose.rememberNavController
@@ -261,19 +212,18 @@ jobs:
           data class Person(val name: String, val gender: String = "خانم")
           data class ScheduleRow(val person: Person, val date: LocalDate)
 
-          // ---------- Utility functions ----------
+          // ---------- Utility functions (unchanged) ----------
           fun loadPeople(prefs: android.content.SharedPreferences): List<Person> =
               prefs.getString("people", "")!!.split("\\u001e").filter { it.isNotBlank() }.map {
-                  val parts = it.split("\\u001f")
-                  Person(parts[0], parts.getOrElse(1) { "خانم" })
+                  val x = it.split("\\u001f")
+                  Person(x[0], x.getOrElse(1) { "خانم" })
               }
 
           fun savePeople(prefs: android.content.SharedPreferences, people: List<Person>) {
-              prefs.edit().putString(
-                  "people",
-                  people.joinToString("\\u001e") { "${it.name}\\u001f${it.gender}" }
-              ).apply()
+              prefs.edit().putString("people", people.joinToString("\\u001e") { "${it.name}\\u001f${it.gender}" }).apply()
           }
+
+          fun filterSetOf(p: Person) = setOf(p)
 
           fun formatOutput(rows: List<ScheduleRow>, emoji: String, template: String): String =
               rows.mapIndexed { i, r ->
@@ -288,13 +238,9 @@ jobs:
           fun ordinal(n: Int) = listOf("اول", "دوم", "سوم", "چهارم", "پنجم", "ششم", "هفتم", "هشتم", "نهم", "دهم")
               .getOrElse(n - 1) { n.toString() }
 
-          fun weekday(d: LocalDate) = arrayOf(
-              "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه",
-              "جمعه", "شنبه", "یکشنبه"
-          )[d.dayOfWeek.value - 1]
+          fun weekday(d: LocalDate) = arrayOf("دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه", "جمعه", "شنبه", "یکشنبه")[d.dayOfWeek.value - 1]
 
           fun jalali(d: LocalDate): String {
-              // Jalali calendar conversion
               var gy = d.year - 1600
               var gm = d.monthValue - 1
               var gd = d.dayOfMonth - 1
@@ -308,10 +254,7 @@ jobs:
               j %= 12053
               var jy = 979 + 33 * jp + 4 * (j / 1461)
               j %= 1461
-              if (j >= 366) {
-                  jy += (j - 1) / 365
-                  j = (j - 1) % 365
-              }
+              if (j >= 366) { jy += (j - 1) / 365; j = (j - 1) % 365 }
               val jm = if (j < 186) j / 31 + 1 else (j - 186) / 30 + 7
               val jd = if (j < 186) j % 31 + 1 else (j - 186) % 30 + 1
               return "%04d/%02d/%02d".format(jy, jm, jd)
@@ -335,13 +278,11 @@ jobs:
               val context = LocalContext.current
               val prefs = remember { context.getSharedPreferences("resync", Context.MODE_PRIVATE) }
 
-              // Hoisted states
-              var people by rememberSaveable(
-                  stateSaver = listSaver(
-                      save = { list -> list.map { "${it.name}\\u001f${it.gender}" } },
-                      restore = { list -> list.map { val p = it.split("\\u001f"); Person(p[0], p.getOrElse(1) { "خانم" }) } }
-                  )
-              ) { mutableStateOf(loadPeople(prefs)) }
+              // All state hoisted with rememberSaveable
+              var people by rememberSaveable(stateSaver = listSaver(
+                  save = { list -> list.map { "${it.name}\\u001f${it.gender}" } },
+                  restore = { list -> list.map { val parts = it.split("\\u001f"); Person(parts[0], parts.getOrElse(1) { "خانم" }) } }
+              )) { mutableStateOf(loadPeople(prefs)) }
 
               var name by rememberSaveable { mutableStateOf("") }
               var newGender by rememberSaveable { mutableStateOf("خانم") }
@@ -380,7 +321,6 @@ jobs:
                   persist()
               }
 
-              val navController = rememberNavController()
               val dark = darkOverride ?: isSystemInDarkTheme()
               val colors = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                   if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -396,13 +336,15 @@ jobs:
                       extraLarge = RoundedCornerShape(32.dp)
                   )
               ) {
+                  val navController = rememberNavController()
+
                   Scaffold(
                       topBar = {
                           TopAppBar(
                               title = { Text("Resync", fontWeight = FontWeight.Bold) },
                               actions = {
                                   IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) {
-                                      Icon(if (searchOpen) Icons.Default.Close else Icons.Default.Search, "جست‌وجو")
+                                      Icon(if (searchOpen) Icons.Default.Close else Icons.Default.Search, contentDescription = "جست‌وجو")
                                   }
                                   IconButton(onClick = { darkOverride = !dark }) {
                                       Icon(if (dark) Icons.Default.LightMode else Icons.Default.DarkMode, "تغییر حالت")
@@ -412,12 +354,8 @@ jobs:
                       },
                       bottomBar = {
                           NavigationBar {
-                              val items = listOf(
-                                  "افراد" to Icons.Default.People,
-                                  "تولید" to Icons.Default.Settings,
-                                  "خروجی" to Icons.Default.ListAlt
-                              )
-                              items.forEach { (label, icon) ->
+                              val items = listOf("افراد" to Icons.Default.People, "تولید" to Icons.Default.Settings, "خروجی" to Icons.Default.ListAlt)
+                              items.forEachIndexed { index, (label, icon) ->
                                   NavigationBarItem(
                                       selected = navController.currentDestination?.route == label,
                                       onClick = { navController.navigate(label) },
@@ -432,15 +370,13 @@ jobs:
                       NavHost(
                           navController = navController,
                           startDestination = "افراد",
-                          modifier = Modifier.padding(padding)
+                          modifier = Modifier.padding(padding),
+                          enterTransition = { slideInHorizontally { it } + fadeIn(tween(300)) },
+                          exitTransition = { slideOutHorizontally { -it } + fadeOut(tween(300)) },
+                          popEnterTransition = { slideInHorizontally { -it } + fadeIn(tween(300)) },
+                          popExitTransition = { slideOutHorizontally { it } + fadeOut(tween(300)) }
                       ) {
-                          composable(
-                              "افراد",
-                              enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn(animationSpec = tween(300)) },
-                              exitTransition = { slideOutHorizontally(targetOffsetX = { -it }) + fadeOut(animationSpec = tween(300)) },
-                              popEnterTransition = { slideInHorizontally(initialOffsetX = { -it }) + fadeIn(animationSpec = tween(300)) },
-                              popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(animationSpec = tween(300)) }
-                          ) {
+                          composable("افراد") {
                               PeopleScreen(
                                   people = people,
                                   name = name,
@@ -464,13 +400,7 @@ jobs:
                                   onSearchToggle = { searchOpen = !searchOpen }
                               )
                           }
-                          composable(
-                              "تولید",
-                              enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn(animationSpec = tween(300)) },
-                              exitTransition = { slideOutHorizontally(targetOffsetX = { -it }) + fadeOut(animationSpec = tween(300)) },
-                              popEnterTransition = { slideInHorizontally(initialOffsetX = { -it }) + fadeIn(animationSpec = tween(300)) },
-                              popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(animationSpec = tween(300)) }
-                          ) {
+                          composable("تولید") {
                               ScheduleScreen(
                                   people = people,
                                   emoji = emoji,
@@ -485,13 +415,7 @@ jobs:
                                   onShowDatePicker = { showDatePicker = true }
                               )
                           }
-                          composable(
-                              "خروجی",
-                              enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn(animationSpec = tween(300)) },
-                              exitTransition = { slideOutHorizontally(targetOffsetX = { -it }) + fadeOut(animationSpec = tween(300)) },
-                              popEnterTransition = { slideInHorizontally(initialOffsetX = { -it }) + fadeIn(animationSpec = tween(300)) },
-                              popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(animationSpec = tween(300)) }
-                          ) {
+                          composable("خروجی") {
                               OutputScreen(
                                   rows = rows,
                                   emoji = emoji,
@@ -503,7 +427,7 @@ jobs:
                       }
                   }
 
-                  // ---------- Dialogs ----------
+                  // Dialogs
                   if (bulkDialog) {
                       BulkDialog(
                           onDismiss = { bulkDialog = false },
@@ -540,7 +464,8 @@ jobs:
                           confirmButton = {
                               TextButton(
                                   onClick = {
-                                      people = people - setOf(deleteTarget!!)
+                                      val removed = deleteTarget!!
+                                      people = people - filterSetOf(removed)
                                       persist()
                                       deleteTarget = null
                                   }
@@ -605,8 +530,8 @@ jobs:
                   item {
                       AnimatedVisibility(
                           visible = searchOpen,
-                          enter = expandVertically(animationSpec = spring()) + fadeIn(),
-                          exit = shrinkVertically(animationSpec = spring()) + fadeOut()
+                          enter = expandVertically(spring()) + fadeIn(),
+                          exit = shrinkVertically(spring()) + fadeOut()
                       ) {
                           OutlinedTextField(
                               value = query,
@@ -631,10 +556,17 @@ jobs:
                           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                       ) {
                           Column(Modifier.padding(16.dp)) {
-                              Text("افراد (${people.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                              Text(
+                                  "افراد (${people.size})",
+                                  style = MaterialTheme.typography.titleLarge,
+                                  fontWeight = FontWeight.SemiBold
+                              )
                               Spacer(Modifier.height(8.dp))
                               if (filtered.isEmpty()) {
-                                  Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                                  Box(
+                                      Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                                      contentAlignment = Alignment.Center
+                                  ) {
                                       Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                           Icon(Icons.Default.People, null, Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
                                           Spacer(Modifier.height(8.dp))
@@ -651,7 +583,11 @@ jobs:
                                           .animateContentSize(spring())
                                   ) {
                                       filtered.forEach { p ->
-                                          PersonItem(p, onEdit = { onEdit(p) }, onDelete = { onDelete(p) })
+                                          PersonItem(
+                                              person = p,
+                                              onEdit = { onEdit(p) },
+                                              onDelete = { onDelete(p) }
+                                          )
                                       }
                                   }
                               }
@@ -685,7 +621,10 @@ jobs:
                               label = { Text(newGender) },
                               leadingIcon = { Icon(Icons.Default.Person, null, Modifier.size(18.dp)) }
                           )
-                          FilledIconButton(onClick = onAddPerson, modifier = Modifier.size(56.dp)) {
+                          FilledIconButton(
+                              onClick = onAddPerson,
+                              modifier = Modifier.size(56.dp)
+                          ) {
                               Icon(Icons.Default.Add, "افزودن")
                           }
                           IconButton(onClick = onBulkAdd) {
@@ -700,14 +639,20 @@ jobs:
           fun PersonItem(person: Person, onEdit: () -> Unit, onDelete: () -> Unit) {
               AnimatedVisibility(
                   visible = true,
-                  enter = fadeIn(animationSpec = spring()) + scaleIn(initialScale = 0.6f, animationSpec = spring()),
+                  enter = fadeIn(spring()) + scaleIn(initialScale = 0.6f, animationSpec = spring()),
                   exit = fadeOut() + scaleOut(targetScale = 0.6f)
               ) {
                   ElevatedCard(
-                      modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).animateContentSize(spring()),
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .padding(vertical = 4.dp)
+                          .animateContentSize(spring()),
                       shape = RoundedCornerShape(20.dp)
                   ) {
-                      Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                      Row(
+                          Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                          verticalAlignment = Alignment.CenterVertically
+                      ) {
                           Surface(
                               color = MaterialTheme.colorScheme.primaryContainer,
                               shape = RoundedCornerShape(16.dp),
@@ -720,10 +665,18 @@ jobs:
                           Spacer(Modifier.width(12.dp))
                           Column(Modifier.weight(1f)) {
                               Text(person.name, fontWeight = FontWeight.SemiBold)
-                              AssistChip(onClick = {}, label = { Text(person.gender) }, leadingIcon = { Icon(Icons.Default.Person, null, Modifier.size(16.dp)) })
+                              AssistChip(
+                                  onClick = {},
+                                  label = { Text(person.gender) },
+                                  leadingIcon = { Icon(Icons.Default.Person, null, Modifier.size(16.dp)) }
+                              )
                           }
-                          IconButton(onClick = onEdit, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Edit, "ویرایش") }
-                          IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Delete, "حذف") }
+                          IconButton(onClick = onEdit, modifier = Modifier.size(48.dp)) {
+                              Icon(Icons.Default.Edit, "ویرایش ${person.name}")
+                          }
+                          IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) {
+                              Icon(Icons.Default.Delete, "حذف ${person.name}")
+                          }
                       }
                   }
               }
@@ -762,7 +715,10 @@ jobs:
                                   modifier = Modifier.fillMaxWidth(),
                                   leadingIcon = { Text("🎨") }
                               )
-                              OutlinedButton(onClick = onShowDatePicker, modifier = Modifier.fillMaxWidth()) {
+                              OutlinedButton(
+                                  onClick = onShowDatePicker,
+                                  modifier = Modifier.fillMaxWidth()
+                              ) {
                                   Icon(Icons.Default.DateRange, null)
                                   Spacer(Modifier.width(8.dp))
                                   Text("تاریخ شروع: ${jalali(startDate)}")
@@ -777,13 +733,24 @@ jobs:
                                       )
                                   }
                               }
-                              Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                  Button(onClick = onGenerate, enabled = people.isNotEmpty(), modifier = Modifier.weight(1f)) {
+                              Row(
+                                  modifier = Modifier.fillMaxWidth(),
+                                  horizontalArrangement = Arrangement.spacedBy(8.dp)
+                              ) {
+                                  Button(
+                                      onClick = onGenerate,
+                                      enabled = people.isNotEmpty(),
+                                      modifier = Modifier.weight(1f)
+                                  ) {
                                       Icon(Icons.Default.Refresh, null)
                                       Spacer(Modifier.width(6.dp))
                                       Text("ترتیب جدید")
                                   }
-                                  OutlinedButton(onClick = onReuseSeed, enabled = people.isNotEmpty() && previousSeed != 0L, modifier = Modifier.weight(1f)) {
+                                  OutlinedButton(
+                                      onClick = onReuseSeed,
+                                      enabled = people.isNotEmpty() && previousSeed != 0L,
+                                      modifier = Modifier.weight(1f)
+                                  ) {
                                       Text("Seed قبلی")
                                   }
                               }
@@ -816,9 +783,17 @@ jobs:
                   if (rows.isEmpty()) "" else formatOutput(rows, emoji, template)
               }
 
-              Box(Modifier.fillMaxSize().padding(16.dp)) {
+              Box(
+                  Modifier
+                      .fillMaxSize()
+                      .padding(16.dp)
+              ) {
                   if (rows.isEmpty()) {
-                      Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                      Column(
+                          Modifier.fillMaxSize(),
+                          horizontalAlignment = Alignment.CenterHorizontally,
+                          verticalArrangement = Arrangement.Center
+                      ) {
                           Icon(Icons.Default.ListAlt, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
                           Spacer(Modifier.height(16.dp))
                           Text("هنوز برنامه‌ای تولید نشده است.", style = MaterialTheme.typography.titleMedium)
@@ -835,10 +810,16 @@ jobs:
                               Text(
                                   text = output,
                                   style = MaterialTheme.typography.bodyLarge,
-                                  modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).animateContentSize()
+                                  modifier = Modifier
+                                      .fillMaxWidth()
+                                      .verticalScroll(rememberScrollState())
+                                      .animateContentSize()
                               )
                               Spacer(Modifier.height(12.dp))
-                              Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                              Row(
+                                  Modifier.fillMaxWidth(),
+                                  horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+                              ) {
                                   TextButton(onClick = { clipboard.setText(AnnotatedString(output)) }) {
                                       Icon(Icons.Default.ContentCopy, null)
                                       Text("کپی")
@@ -892,7 +873,12 @@ jobs:
                   title = { Text("ویرایش شخص") },
                   text = {
                       Column {
-                          OutlinedTextField(value = n, onValueChange = { n = it }, label = { Text("نام") }, modifier = Modifier.fillMaxWidth())
+                          OutlinedTextField(
+                              value = n,
+                              onValueChange = { n = it },
+                              label = { Text("نام") },
+                              modifier = Modifier.fillMaxWidth()
+                          )
                           Spacer(Modifier.height(8.dp))
                           listOf("خانم", "آقا", "بدون جنسیت").forEach { gender ->
                               Row(verticalAlignment = Alignment.CenterVertically) {
@@ -902,57 +888,43 @@ jobs:
                           }
                       }
                   },
-                  confirmButton = { TextButton(onClick = { if (n.trim().isNotEmpty()) onSave(Person(n.trim(), g)) }) { Text("ذخیره") } },
+                  confirmButton = {
+                      TextButton(
+                          onClick = {
+                              if (n.trim().isNotEmpty()) onSave(Person(n.trim(), g))
+                          }
+                      ) { Text("ذخیره") }
+                  },
                   dismissButton = { TextButton(onClick = onDismiss) { Text("انصراف") } }
               )
           }
           EOF
 
-          # Step 5b: Generate a debug keystore for signing release APK
-          keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass android -keypass android -dname "CN=Android Debug, O=Android, C=US"
+      # ---------- 5. Setup Gradle and generate wrapper ----------
+      - name: Setup Gradle and generate wrapper
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          # Disable cache cleanup on failure to avoid Java version mismatch
+          cache-cleanup: always
 
-          # Move keystore to app/ folder (so build.gradle can find it)
-          mv debug.keystore app/
+      # ---------- 6. Build APKs ----------
+      - name: Build debug and release APKs
+        run: ./gradlew --no-daemon --console=plain --stacktrace :app:assembleDebug :app:assembleRelease
 
-      # Step 6: Build the APKs
-      - name: Build APKs
-        run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon --console=plain --stacktrace \
-            :app:assembleDebug \
-            :app:assembleRelease
-
-      # Step 7: Upload APK artifacts
+      # ---------- 7. Upload artifacts ----------
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: Resync-APK-${{ env.VERSION_NAME }}
+          name: Resync-APK-${{ inputs.version_name || '1.0.0' }}
           path: |
             app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
 
-      # Step 8: (Optional) Create a GitHub Release if tag input is provided
-      - name: Create GitHub Release
-        if: inputs.release_tag != ''
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ inputs.release_tag }}
-          name: "Resync ${{ env.VERSION_NAME }}"
-          body: |
-            ## Resync APK v${{ env.VERSION_NAME }}
-            - Debug APK (signed with debug key)
-            - Release APK (signed with debug key for testing)
-          files: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/release/app-release.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Step 9: Commit generated source to repository (optional)
+      # ---------- 8. Commit generated source (optional) ----------
       - name: Commit generated Android source
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore: generate Resync Android project (version ${{ env.VERSION_NAME }})"
-          file_pattern: "settings.gradle.kts build.gradle.kts gradle.properties gradlew gradlew.bat gradle app/"
+          commit_message: "chore: generate Resync Android project with Material 3 redesign"
+          file_pattern: "settings.gradle.kts build.gradle.kts gradle.properties app gradlew gradlew.bat gradle"
