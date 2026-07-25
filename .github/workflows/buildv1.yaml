@@ -252,7 +252,7 @@ jobs:
                   topBar = { MediumTopAppBar(
                     title = { Column { Text("Resync", fontWeight = FontWeight.Bold); Text("${people.size} نفر در فهرست", style = MaterialTheme.typography.labelMedium) } },
                     actions = {
-                      IconButton(onClick = { darkOverride = !(darkOverride ?: isSystemInDarkTheme()) }) { Icon(if (dark) Icons.Default.LightMode else Icons.Default.DarkMode, "تغییر حالت نمایش") }
+                      IconButton(onClick = { darkOverride = !dark }) { Icon(if (dark) Icons.Default.LightMode else Icons.Default.DarkMode, "تغییر حالت نمایش") }
                       IconButton(onClick = { showSettings = !showSettings }) { Icon(Icons.Default.Tune, "تنظیمات") }
                     }
                   ) },
@@ -318,7 +318,8 @@ jobs:
           chmod +x gradlew
 
       - name: Build debug and release APKs
-        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
+        # --console=plain keeps Kotlin compiler diagnostics visible in raw Actions logs.
+        run: ./gradlew --no-daemon --console=plain --stacktrace :app:assembleDebug :app:assembleRelease
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
