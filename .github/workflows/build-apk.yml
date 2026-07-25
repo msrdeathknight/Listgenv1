@@ -12,9 +12,7 @@ on:
         required: true
         default: 'release'
         type: choice
-        options:
-          - release
-          - debug
+        options: [release, debug]
 
 permissions:
   contents: write
@@ -22,88 +20,80 @@ permissions:
 
 jobs:
   build-apk:
-    name: 📱 Build APK — ${{ github.event.inputs.build_type || 'release' }}
+    name: Build APK — ${{ github.event.inputs.build_type || 'release' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      # ──────────────────────────────────────────
-      # 1. Checkout (empty repo is fine)
-      # ──────────────────────────────────────────
       - name: 📥 Checkout
         uses: actions/checkout@v4
 
-      # ──────────────────────────────────────────
-      # 2. Generate entire Android project in-repo
-      # ──────────────────────────────────────────
+      - name: ☕ Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 🤖 Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0'
+
+      - name: 🐘 Setup Gradle
+        run: |
+          cd /tmp
+          wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip
+          unzip -q gradle-8.5-bin.zip -d /opt/gradle
+          echo "/opt/gradle/gradle-8.5/bin" >> $GITHUB_PATH
+          /opt/gradle/gradle-8.5/bin/gradle --version
+
       - name: 🏗️ Generate Android project
+        env:
+          WS: ${{ github.workspace }}
         run: |
           set -eu
-          BASE="$GITHUB_WORKSPACE"
-          mkdir -p "$BASE"/app/src/main/java/com/resync/scheduler
-          mkdir -p "$BASE"/app/src/main/res/layout
-          mkdir -p "$BASE"/app/src/main/res/values
-          mkdir -p "$BASE"/app/src/main/res/drawable
-          mkdir -p "$BASE"/app/src/main/assets
-          mkdir -p "$BASE"/gradle/wrapper
+          B="$WS"
+          echo "Workspace: $B"
+
+          mkdir -p "$B"/app/src/main/java/com/resync/scheduler
+          mkdir -p "$B"/app/src/main/res/layout
+          mkdir -p "$B"/app/src/main/res/values
+          mkdir -p "$B"/app/src/main/assets
 
           # ── settings.gradle ──
-          cat > "$BASE"/settings.gradle << 'GRADLEEOF'
+          cat > "$B"/settings.gradle << 'EOF'
           pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
           }
           dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
+              repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
+              repositories { google(); mavenCentral() }
           }
           rootProject.name = "ResyncScheduler"
           include ':app'
-          GRADLEEOF
+          EOF
 
-          # ── build.gradle (root) ──
-          cat > "$BASE"/build.gradle << 'GRADLEEOF'
+          # ── root build.gradle ──
+          cat > "$B"/build.gradle << 'EOF'
           buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.2.0'
-              }
+              repositories { google(); mavenCentral() }
+              dependencies { classpath 'com.android.tools.build:gradle:8.2.0' }
           }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          GRADLEEOF
+          EOF
 
           # ── gradle.properties ──
-          cat > "$BASE"/gradle.properties << 'EOF'
+          cat > "$B"/gradle.properties << 'EOF'
           android.useAndroidX=true
           android.enableJetifier=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          org.gradle.parallel=true
-          org.gradle.caching=true
           EOF
 
           # ── app/build.gradle ──
-          cat > "$BASE"/app/build.gradle << 'EOF'
-          plugins {
-              id 'com.android.application'
-          }
+          cat > "$B"/app/build.gradle << 'EOF'
+          plugins { id 'com.android.application' }
           android {
               namespace 'com.resync.scheduler'
               compileSdk 34
-              buildToolsVersion '34.0.0'
               defaultConfig {
                   applicationId "com.resync.scheduler"
                   minSdk 21
@@ -129,16 +119,16 @@ jobs:
           }
           EOF
 
-          # ── app/proguard-rules.pro ──
-          cat > "$BASE"/app/proguard-rules.pro << 'EOF'
+          # ── proguard ──
+          cat > "$B"/app/proguard-rules.pro << 'EOF'
           -keepclassmembers class com.resync.scheduler.MainActivity$WebAppInterface {
               @android.webkit.JavascriptInterface <methods>;
           }
           -keep class com.resync.scheduler.MainActivity { *; }
           EOF
 
-          # ── AndroidManifest.xml ──
-          cat > "$BASE"/app/src/main/AndroidManifest.xml << 'EOF'
+          # ── AndroidManifest ──
+          cat > "$B"/app/src/main/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               xmlns:tools="http://schemas.android.com/tools">
@@ -165,30 +155,23 @@ jobs:
           </manifest>
           EOF
 
-          # ── res/values/strings.xml ──
-          cat > "$BASE"/app/src/main/res/values/strings.xml << 'EOF'
+          # ── res xml files ──
+          cat > "$B"/app/src/main/res/values/strings.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <string name="app_name">لیست ساز هوشمند</string>
-          </resources>
+          <resources><string name="app_name">لیست ساز هوشمند</string></resources>
           EOF
 
-          # ── res/values/colors.xml ──
-          cat > "$BASE"/app/src/main/res/values/colors.xml << 'EOF'
+          cat > "$B"/app/src/main/res/values/colors.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <color name="md_surface">#FFFBFBFB</color>
               <color name="md_surface_container">#FFF0F0F0</color>
               <color name="md_on_surface">#FF1A1A1A</color>
               <color name="md_primary">#FF1A1A1A</color>
-              <color name="md_secondary_container">#FFE0E0E0</color>
-              <color name="md_outline_variant">#FFD0D0D0</color>
-              <color name="splash_bg">#FFFBFBFB</color>
           </resources>
           EOF
 
-          # ── res/values/themes.xml ──
-          cat > "$BASE"/app/src/main/res/values/themes.xml << 'EOF'
+          cat > "$B"/app/src/main/res/values/themes.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <style name="Theme.ResyncScheduler" parent="android:Theme.Material.Light.NoActionBar">
@@ -200,24 +183,21 @@ jobs:
           </resources>
           EOF
 
-          # ── res/layout/activity_main.xml ──
-          cat > "$BASE"/app/src/main/res/layout/activity_main.xml << 'EOF'
+          cat > "$B"/app/src/main/res/layout/activity_main.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:layout_width="match_parent"
               android:layout_height="match_parent"
               android:fitsSystemWindows="true">
-              <WebView
-                  android:id="@+id/webview"
+              <WebView android:id="@+id/webview"
                   android:layout_width="match_parent"
                   android:layout_height="match_parent"/>
           </FrameLayout>
           EOF
 
           # ── MainActivity.java ──
-          cat > "$BASE"/app/src/main/java/com/resync/scheduler/MainActivity.java << 'JAVAEOF'
+          cat > "$B"/app/src/main/java/com/resync/scheduler/MainActivity.java << 'JAVAEOF'
           package com.resync.scheduler;
-
           import android.annotation.SuppressLint;
           import android.app.Activity;
           import android.content.res.Configuration;
@@ -233,7 +213,6 @@ jobs:
           import android.widget.Toast;
 
           public class MainActivity extends Activity {
-
               private WebView webView;
 
               @SuppressLint("SetJavaScriptEnabled")
@@ -246,7 +225,6 @@ jobs:
                   }
                   setContentView(R.layout.activity_main);
                   webView = findViewById(R.id.webview);
-
                   WebSettings s = webView.getSettings();
                   s.setJavaScriptEnabled(true);
                   s.setDomStorageEnabled(true);
@@ -258,10 +236,8 @@ jobs:
                   s.setAllowFileAccess(true);
                   s.setAllowContentAccess(true);
                   s.setTextZoom(100);
-
                   webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
                   webView.setBackgroundColor(Color.TRANSPARENT);
-
                   webView.setWebViewClient(new WebViewClient() {
                       @Override
                       public void onPageFinished(WebView view, String url) {
@@ -290,41 +266,30 @@ jobs:
                   }
               }
 
-              @Override
-              public void onBackPressed() {
+              @Override public void onBackPressed() {
                   if (webView != null && webView.canGoBack()) webView.goBack();
                   else super.onBackPressed();
               }
-
-              @Override protected void onResume() { super.onResume(); if (webView != null) webView.onResume(); }
-              @Override protected void onPause() { if (webView != null) webView.onPause(); super.onPause(); }
-
-              @Override
-              protected void onDestroy() {
-                  if (webView != null) {
-                      webView.loadUrl("about:blank");
-                      webView.clearHistory();
-                      webView.removeAllViews();
-                      webView.destroy();
-                      webView = null;
-                  }
+              @Override protected void onResume() { super.onResume(); if(webView!=null) webView.onResume(); }
+              @Override protected void onPause() { if(webView!=null) webView.onPause(); super.onPause(); }
+              @Override protected void onDestroy() {
+                  if(webView!=null){webView.loadUrl("about:blank");webView.clearHistory();webView.removeAllViews();webView.destroy();webView=null;}
                   super.onDestroy();
               }
 
               public static class WebAppInterface {
                   private final Activity a;
-                  WebAppInterface(Activity a) { this.a = a; }
+                  WebAppInterface(Activity a){this.a=a;}
                   @JavascriptInterface
-                  public void showToast(String msg) {
-                      a.runOnUiThread(() -> Toast.makeText(a, msg, Toast.LENGTH_SHORT).show());
-                  }
+                  public void showToast(String msg){a.runOnUiThread(()->Toast.makeText(a,msg,Toast.LENGTH_SHORT).show());}
               }
           }
           JAVAEOF
 
-          # ── app.html (complete offline web app with MD3E) ──
-          # استفاده از cat با heredoc به‌جای python3
-          cat > "$BASE"/app/src/main/assets/app.html << 'HTMLEOF'
+          echo "✅ Java & XML files written. Writing HTML..."
+
+          # ── app.html (single heredoc, quoted to prevent shell expansion) ──
+          cat > "$B"/app/src/main/assets/app.html << 'HTMLEOF'
           <!DOCTYPE html>
           <html lang="fa" dir="rtl">
           <head>
@@ -499,57 +464,32 @@ jobs:
           function displaySchedule(e){scheduleCard.style.display="block",scheduleContainer.innerHTML="",e.forEach(function(e,a){var t=document.createElement("div");t.className="schedule-item",t.style.animationDelay=.06*a+"s";var n=e.gender?e.gender:"";t.innerHTML='<span class="emoji">'+e.emoji+'</span> <span class="order-text">نفر '+e.orderText+'</span> '+(n?'<span class="normal-text">'+n+"</span> ":"")+'<span class="name-part bold-part">'+e.name+'</span> <span class="normal-text">روز</span> <span class="weekday-bold bold-part">'+e.weekday+'</span> <span class="normal-text">تاریخ</span> <span class="date-bold bold-part">'+e.dateStr+"</span>",scheduleContainer.appendChild(t)}),setTimeout(function(){mainScroll.scrollTop=0},80)}
           modalSaveBtn.addEventListener("click",function(){if(!(editingIndex<0||editingIndex>=names.length)){var e=editNameInput.value.trim();if(!e)return void(window.Android&&window.Android.showToast?window.Android.showToast("نام نمی‌تواند خالی باشد."):alert("نام نمی‌تواند خالی باشد."));if(names.some(function(a,t){return a.name===e&&t!==editingIndex}))return void(window.Android&&window.Android.showToast?window.Android.showToast("این نام قبلاً در لیست وجود دارد."):alert("این نام قبلاً در لیست وجود دارد."));names[editingIndex].name=e,renderList(),saveState(),function(){editModal.classList.remove("active"),editingIndex=-1,editNameInput.value=""}()}}),modalCancelBtn.addEventListener("click",function(){editModal.classList.remove("active"),editingIndex=-1,editNameInput.value=""}),modalCloseBtn.addEventListener("click",function(){editModal.classList.remove("active"),editingIndex=-1,editNameInput.value=""}),editModal.addEventListener("click",function(e){e.target===editModal&&(editModal.classList.remove("active"),editingIndex=-1,editNameInput.value="")}),editNameInput.addEventListener("keydown",function(e){"Enter"===e.key?(e.preventDefault(),modalSaveBtn.click()):"Escape"===e.key&&(e.preventDefault(),editModal.classList.remove("active"),editingIndex=-1,editNameInput.value="")});
           function loadState(){try{var e=localStorage.getItem("scheduleAppData");if(e){var a=JSON.parse(e);Array.isArray(a.names)&&(names=a.names),a.startDate&&(startDateInput.value=a.startDate),void 0!==a.emoji&&(emojiInput.value=a.emoji)}}catch(e){}renderList()}
-          addBtn.addEventListener("click",function(){var e=nameInput.value,a=genderSelect.value;addName(e,a)&&(nameInput.value="",genderSelect.value="خانم")}),nameInput.addEventListener("keypress",function(e){"Enter"===e.key&&(e.preventDefault(),addBtn.click())}),bulkAddBtn.addEventListener("click",function(){var e=bulkInput.value;if(e.trim()){var a=e.split(/[,\n]+/).map(function(e){return e.trim()}).filter(function(e){return e}),t=0;a.forEach(function(e){e&&!names.some(function(a){return a.name===e})&&(names.push({name:e,gender:""}),t++)}),t>0?(renderList(),bulkInput.value="",saveState(),nameListContainer&&(nameListContainer.scrollTop=nameListContainer.scrollHeight)):window.Android&&window.Android.showToast?window.Android.showToast("نام جدیدی یافت نشد یا همه تکراری هستند."):alert("نام جدیدی یافت نشد یا همه تکراری هستند.")}}),clearAllBtn.addEventListener("click",function(){0!==names.length&&confirm("همه نام‌ها حذف شوند؟")&&(names=[],renderList(),hideSchedule(),saveState())}),toggleListBtn.addEventListener("click",function(){namesVisible=!namesVisible,nameListEl.style.display=namesVisible?"block":"none",toggleListBtn.innerHTML=namesVisible?"👁":"🚫"}),generateBtn.addEventListener("click",function(){if(0===names.length)return void(window.Android&&window.Android.showToast?window.Android.showToast("حداقل یک نام اضافه کنید."):alert("حداقل یک نام اضافه کنید."));var e=startDateInput.value;if(!e)return void(window.Android&&window.Android.showToast?window.Android.showToast("لطفاً تاریخ شروع را انتخاب کنید."):alert("لطفاً تاریخ شروع را انتخاب کنید."));var a=new Date(e);if(isNaN(a.getTime()))return void(window.Android&&window.Android.showToast?window.Android.showToast("تاریخ نامعتبر است."):alert("تاریخ نامعتبر است."));var t=shuffleArray(names),n=emojiInput.value.trim()||"💎",r=[];t.forEach(function(e,t){var i=new Date(a);i.setDate(i.getDate()+t);var o=i.toLocaleDateString("fa-IR",{weekday:"long"}),l=i.toLocaleDateString("fa-IR",{year:"numeric",month:"numeric",day:"numeric"}).replace(/\//g,"/"),s=numberToOrdinal(t+1),d=e.gender||"";r.push({name:e.name,gender:d,order:t+1,orderText:s,weekday:o,dateStr:l,emoji:n})}),scheduleData=r,displaySchedule(r),saveState()}),copyScheduleBtn.addEventListener("click",function(){if(!scheduleData.length)return void(window.Android&&window.Android.showToast?window.Android.showToast("برنامه‌ای برای کپی وجود ندارد."):alert("برنامه‌ای برای کپی وجود ندارد."));var e=scheduleData.map(function(e){return e.emoji+" نفر "+e.orderText+" "+e.gender+" "+e.name+" روز "+e.weekday+" تاریخ "+e.dateStr}).join("\n");if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(e).then(function(){window.Android&&window.Android.showToast?window.Android.showToast("✅ برنامه کپی شد!"):alert("✅ برنامه کپی شد!")}).catch(function(){!function(e){var a=document.createElement("textarea");a.value=e,a.style.position="fixed",a.style.left="-9999px",a.style.top="-9999px",document.body.appendChild(a),a.select();try{document.execCommand("copy"),window.Android&&window.Android.showToast?window.Android.showToast("✅ برنامه کپی شد!"):alert("✅ برنامه کپی شد!")}catch(e){window.Android&&window.Android.showToast?window.Android.showToast("خطا در کپی کردن."):alert("خطا در کپی کردن.")}document.body.removeChild(a)}(e)});else!function(e){var a=document.createElement("textarea");a.value=e,a.style.position="fixed",a.style.left="-9999px",a.style.top="-9999px",document.body.appendChild(a),a.select();try{document.execCommand("copy"),window.Android&&window.Android.showToast?window.Android.showToast("✅ برنامه کپی شد!"):alert("✅ برنامه کپی شد!")}catch(e){window.Android&&window.Android.showToast?window.Android.showToast("خطا در کپی کردن."):alert("خطا در کپی کردن.")}document.body.removeChild(a)}(e)}),downloadScheduleBtn.addEventListener("click",function(){if(!scheduleData.length)return void(window.Android&&window.Android.showToast?window.Android.showToast("برنامه‌ای برای دانلود وجود ندارد."):alert("برنامه‌ای برای دانلود وجود ندارد."));var e=scheduleData.map(function(e){return e.emoji+" نفر "+e.orderText+" "+e.gender+" "+e.name+" روز "+e.weekday+" تاریخ "+e.dateStr}).join("\n"),a=new Blob([e],{type:"text/plain;charset=utf-8"}),t=URL.createObjectURL(a),n=document.createElement("a");n.href=t,n.download="برنامه_نوبت_دهی_"+(new Date).toLocaleDateString("fa-IR").replace(/\//g,"-")+".txt",document.body.appendChild(n),n.click(),document.body.removeChild(n),URL.revokeObjectURL(t)}),themeToggle.addEventListener("click",function(){!function(e){isDark=e,document.documentElement.setAttribute("data-theme",e?"dark":"light"),themeToggle.innerHTML=e?"☀":"🌙",localStorage.setItem("scheduleAppTheme",e?"dark":"light")}(!isDark)}),emojiInput.addEventListener("input",saveState),startDateInput.addEventListener("change",saveState),document.addEventListener("keydown",function(e){e.ctrlKey&&"Enter"===e.key&&(e.preventDefault(),generateBtn.click()),"Escape"===e.key&&(document.activeElement===nameInput&&(nameInput.value="",nameInput.blur()),editModal.classList.contains("active")&&(editModal.classList.remove("active"),editingIndex=-1,editNameInput.value=""))}),document.querySelectorAll(".btn, .btn-icon").forEach(function(e){e.addEventListener("click",function(e){var a=this.getBoundingClientRect(),t=e.clientX-a.left,n=e.clientY-a.top,r=document.createElement("span");r.className="ripple";var i=.5*Math.max(a.width,a.height);r.style.width=r.style.height=i+"px",r.style.left=t-i/2+"px",r.style.top=n-i/2+"px",this.appendChild(r),setTimeout(function(){r.remove()},600)})}),bulkInput.addEventListener("input",function(){this.style.height="auto";var e=this.value.split("\n").length;this.style.height=Math.min(Math.max(24*e+16,40),120)+"px"}),function(){var e=localStorage.getItem("scheduleAppTheme");"dark"===e?!function(e){isDark=e,document.documentElement.setAttribute("data-theme",e?"dark":"light"),themeToggle.innerHTML=e?"☀":"🌙",localStorage.setItem("scheduleAppTheme",e?"dark":"light")}(!0):"light"===e?!function(e){isDark=e,document.documentElement.setAttribute("data-theme",e?"dark":"light"),themeToggle.innerHTML=e?"☀":"🌙",localStorage.setItem("scheduleAppTheme",e?"dark":"light")}(!1):window.matchMedia("(prefers-color-scheme:dark)").matches&&function(e){isDark=e,document.documentElement.setAttribute("data-theme",e?"dark":"light"),themeToggle.innerHTML=e?"☀":"🌙",localStorage.setItem("scheduleAppTheme",e?"dark":"light")}(!0)}(),startDateInput.value||function(){var e=new Date,a=e.getFullYear(),t=String(e.getMonth()+1).padStart(2,"0"),n=String(e.getDate()).padStart(2,"0");startDateInput.value=a+"-"+t+"-"+n}(),loadState(),setTimeout(function(){bulkInput.style.height="40px"},50);
+          addBtn.addEventListener("click",function(){var e=nameInput.value,a=genderSelect.value;addName(e,a)&&(nameInput.value="",genderSelect.value="خانم")}),nameInput.addEventListener("keypress",function(e){"Enter"===e.key&&(e.preventDefault(),addBtn.click())}),bulkAddBtn.addEventListener("click",function(){var e=bulkInput.value;if(e.trim()){var a=e.split(/[,\n]+/).map(function(e){return e.trim()}).filter(function(e){return e}),t=0;a.forEach(function(e){e&&!names.some(function(a){return a.name===e})&&(names.push({name:e,gender:""}),t++)}),t>0?(renderList(),bulkInput.value="",saveState(),nameListContainer&&(nameListContainer.scrollTop=nameListContainer.scrollHeight)):window.Android&&window.Android.showToast?window.Android.showToast("نام جدیدی یافت نشد یا همه تکراری هستند."):alert("نام جدیدی یافت نشد یا همه تکراری هستند.")}}),clearAllBtn.addEventListener("click",function(){0!==names.length&&confirm("همه نام‌ها حذف شوند؟")&&(names=[],renderList(),hideSchedule(),saveState())}),toggleListBtn.addEventListener("click",function(){namesVisible=!namesVisible,nameListEl.style.display=namesVisible?"block":"none",toggleListBtn.innerHTML=namesVisible?"👁":"🚫"}),generateBtn.addEventListener("click",function(){if(0===names.length)return void(window.Android&&window.Android.showToast?window.Android.showToast("حداقل یک نام اضافه کنید."):alert("حداقل یک نام اضافه کنید."));var e=startDateInput.value;if(!e)return void(window.Android&&window.Android.showToast?window.Android.showToast("لطفاً تاریخ شروع را انتخاب کنید."):alert("لطفاً تاریخ شروع را انتخاب کنید."));var a=new Date(e);if(isNaN(a.getTime()))return void(window.Android&&window.Android.showToast?window.Android.showToast("تاریخ نامعتبر است."):alert("تاریخ نامعتبر است."));var t=shuffleArray(names),n=emojiInput.value.trim()||"💎",r=[];t.forEach(function(e,t){var i=new Date(a);i.setDate(i.getDate()+t);var o=i.toLocaleDateString("fa-IR",{weekday:"long"}),l=i.toLocaleDateString("fa-IR",{year:"numeric",month:"numeric",day:"numeric"}).replace(/\//g,"/"),s=numberToOrdinal(t+1),d=e.gender||"";r.push({name:e.name,gender:d,order:t+1,orderText:s,weekday:o,dateStr:l,emoji:n})}),scheduleData=r,displaySchedule(r),saveState()}),copyScheduleBtn.addEventListener("click",function(){if(!scheduleData.length)return void(window.Android&&window.Android.showToast?window.Android.showToast("برنامه‌ای برای کپی وجود ندارد."):alert("برنامه‌ای برای کپی وجود ندارد."));var e=scheduleData.map(function(e){return e.emoji+" نفر "+e.orderText+" "+e.gender+" "+e.name+" روز "+e.weekday+" تاریخ "+e.dateStr}).join("\n");if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(e).then(function(){window.Android&&window.Android.showToast?window.Android.showToast("✅ برنامه کپی شد!"):alert("✅ برنامه کپی شد!")}).catch(function(){!function(t){var a=document.createElement("textarea");a.value=t,a.style.position="fixed",a.style.left="-9999px",a.style.top="-9999px",document.body.appendChild(a),a.select();try{document.execCommand("copy"),window.Android&&window.Android.showToast?window.Android.showToast("✅ برنامه کپی شد!"):alert("✅ برنامه کپی شد!")}catch(e){window.Android&&window.Android.showToast?window.Android.showToast("خطا در کپی کردن."):alert("خطا در کپی کردن.")}document.body.removeChild(a)}(e)});else!function(t){var a=document.createElement("textarea");a.value=t,a.style.position="fixed",a.style.left="-9999px",a.style.top="-9999px",document.body.appendChild(a),a.select();try{document.execCommand("copy"),window.Android&&window.Android.showToast?window.Android.showToast("✅ برنامه کپی شد!"):alert("✅ برنامه کپی شد!")}catch(e){window.Android&&window.Android.showToast?window.Android.showToast("خطا در کپی کردن."):alert("خطا در کپی کردن.")}document.body.removeChild(a)}(e)}),downloadScheduleBtn.addEventListener("click",function(){if(!scheduleData.length)return void(window.Android&&window.Android.showToast?window.Android.showToast("برنامه‌ای برای دانلود وجود ندارد."):alert("برنامه‌ای برای دانلود وجود ندارد."));var e=scheduleData.map(function(e){return e.emoji+" نفر "+e.orderText+" "+e.gender+" "+e.name+" روز "+e.weekday+" تاریخ "+e.dateStr}).join("\n"),a=new Blob([e],{type:"text/plain;charset=utf-8"}),t=URL.createObjectURL(a),n=document.createElement("a");n.href=t,n.download="برنامه_نوبت_دهی_"+(new Date).toLocaleDateString("fa-IR").replace(/\//g,"-")+".txt",document.body.appendChild(n),n.click(),document.body.removeChild(n),URL.revokeObjectURL(t)}),themeToggle.addEventListener("click",function(){!function(e){isDark=e,document.documentElement.setAttribute("data-theme",e?"dark":"light"),themeToggle.innerHTML=e?"☀":"🌙",localStorage.setItem("scheduleAppTheme",e?"dark":"light")}(!isDark)}),emojiInput.addEventListener("input",saveState),startDateInput.addEventListener("change",saveState),document.addEventListener("keydown",function(e){e.ctrlKey&&"Enter"===e.key&&(e.preventDefault(),generateBtn.click()),"Escape"===e.key&&(document.activeElement===nameInput&&(nameInput.value="",nameInput.blur()),editModal.classList.contains("active")&&(editModal.classList.remove("active"),editingIndex=-1,editNameInput.value=""))}),document.querySelectorAll(".btn, .btn-icon").forEach(function(e){e.addEventListener("click",function(e){var a=this.getBoundingClientRect(),t=e.clientX-a.left,n=e.clientY-a.top,r=document.createElement("span");r.className="ripple";var i=.5*Math.max(a.width,a.height);r.style.width=r.style.height=i+"px",r.style.left=t-i/2+"px",r.style.top=n-i/2+"px",this.appendChild(r),setTimeout(function(){r.remove()},600)})}),bulkInput.addEventListener("input",function(){this.style.height="auto";var e=this.value.split("\n").length;this.style.height=Math.min(Math.max(24*e+16,40),120)+"px"}),function(){var e=localStorage.getItem("scheduleAppTheme");"dark"===e?!function(e){isDark=e,document.documentElement.setAttribute("data-theme",e?"dark":"light"),themeToggle.innerHTML=e?"☀":"🌙",localStorage.setItem("scheduleAppTheme",e?"dark":"light")}(!0):"light"===e?!function(e){isDark=e,document.documentElement.setAttribute("data-theme",e?"dark":"light"),themeToggle.innerHTML=e?"☀":"🌙",localStorage.setItem("scheduleAppTheme",e?"dark":"light")}(!1):window.matchMedia("(prefers-color-scheme:dark)").matches&&function(e){isDark=e,document.documentElement.setAttribute("data-theme",e?"dark":"light"),themeToggle.innerHTML=e?"☀":"🌙",localStorage.setItem("scheduleAppTheme",e?"dark":"light")}(!0)}(),startDateInput.value||function(){var e=new Date,a=e.getFullYear(),t=String(e.getMonth()+1).padStart(2,"0"),n=String(e.getDate()).padStart(2,"0");startDateInput.value=a+"-"+t+"-"+n}(),loadState(),setTimeout(function(){bulkInput.style.height="40px"},50);
           })();
           </script>
           </body></html>
           HTMLEOF
 
-          echo "✅ All project files generated successfully!"
-          echo "📁 Project structure:"
-          find "$BASE" -type f -not -path '*/.git/*' | sort
-
-      # ──────────────────────────────────────────
-      # 3. Setup JDK 17
-      # ──────────────────────────────────────────
-      - name: ☕ Setup JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      # ──────────────────────────────────────────
-      # 4. Setup Gradle (بدون نیاز به gradle-wrapper.jar)
-      # ──────────────────────────────────────────
-      - name: 🏗️ Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: 8.5
-
-      # ──────────────────────────────────────────
-      # 5. Setup Android SDK
-      # ──────────────────────────────────────────
-      - name: 🤖 Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: >-
-            platforms;android-34
-            build-tools;34.0.0
+          echo ""
+          echo "✅ ALL files generated!"
+          echo "📁 Files:"
+          find . -type f -not -path './.git/*' | sort
 
       # ──────────────────────────────────────────
       # 6. Build APK
       # ──────────────────────────────────────────
       - name: 🏗️ Build ${{ github.event.inputs.build_type || 'release' }} APK
         run: |
-          BUILD_TYPE="${{ github.event.inputs.build_type || 'release' }}"
-          if [ "$BUILD_TYPE" = "release" ]; then
-            gradle assembleRelease --no-daemon
+          BT="${{ github.event.inputs.build_type || 'release' }}"
+          echo "Building $BT..."
+          if [ "$BT" = "release" ]; then
+            gradle assembleRelease --no-daemon --console=plain
           else
-            gradle assembleDebug --no-daemon
+            gradle assembleDebug --no-daemon --console=plain
           fi
 
       # ──────────────────────────────────────────
-      # 7. Sign Release APK (if keystore secrets provided)
+      # 7. Sign APK (optional)
       # ──────────────────────────────────────────
       - name: 🔐 Sign Release APK
         if: ${{ (github.event.inputs.build_type || 'release') == 'release' }}
@@ -562,9 +502,8 @@ jobs:
           UNSIGNED="app/build/outputs/apk/release/app-release-unsigned.apk"
           SIGNED="app/build/outputs/apk/release/app-release.apk"
           if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
-            echo "🔐 Signing APK..."
+            echo "🔐 Signing..."
             echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
-            # استفاده از ANDROID_HOME که توسط اکشن setup-android تنظیم می‌شود
             $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
               --ks release.keystore \
               --ks-pass pass:"$KEYSTORE_PASSWORD" \
@@ -574,14 +513,14 @@ jobs:
             $ANDROID_HOME/build-tools/34.0.0/apksigner verify "$SIGNED"
             echo "✅ Signed!"
           else
-            echo "⚠️ No keystore secrets — copying unsigned APK"
+            echo "⚠️ No keystore — copying unsigned"
             cp "$UNSIGNED" "$SIGNED"
           fi
 
       # ──────────────────────────────────────────
-      # 8. Rename artifact
+      # 8. Rename & Upload
       # ──────────────────────────────────────────
-      - name: 📝 Rename APK
+      - name: 📤 Upload APK
         run: |
           BT="${{ github.event.inputs.build_type || 'release' }}"
           TS=$(date +%Y%m%d_%H%M%S)
@@ -592,52 +531,30 @@ jobs:
           fi
           NAME="ResyncScheduler_${BT}_${TS}.apk"
           cp "$SRC" "$NAME"
-          echo "APK_ARTIFACT=$NAME" >> $GITHUB_ENV
+          echo "APK=$NAME" >> $GITHUB_ENV
+          echo "✅ APK: $NAME ($(du -h $NAME | cut -f1))"
 
-      # ──────────────────────────────────────────
-      # 9. Upload APK as artifact
-      # ──────────────────────────────────────────
-      - name: 📤 Upload APK
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APK_ARTIFACT }}
-          path: ${{ env.APK_ARTIFACT }}
+          name: ${{ env.APK }}
+          path: ${{ env.APK }}
           retention-days: 30
 
       # ──────────────────────────────────────────
-      # 10. Create GitHub Release
+      # 9. GitHub Release
       # ──────────────────────────────────────────
-      - name: 🚀 Publish Release
+      - name: 🚀 Release
         if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (github.event.inputs.build_type || 'release') == 'release' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
-          name: "📱 Release v${{ github.run_number }}"
+          name: "📱 v${{ github.run_number }}"
           body: |
-            ## 🎲 Resync Scheduler — APK Build
+            ## 🎲 Resync Scheduler
             
-            | Info | Value |
-            |------|-------|
-            | **Build** | `release` |
-            | **Build #** | ${{ github.run_number }} |
+            کاملاً **آفلاین** | Material Design 3 Expressive
             
-            دانلود کنید و روی گوشی اندروید نصب کنید.
-            این برنامه کاملاً **آفلاین** کار می‌کند.
-          files: ${{ env.APK_ARTIFACT }}
-          draft: false
-          prerelease: false
+            دانلود و نصب روی اندروید.
+          files: ${{ env.APK }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # ──────────────────────────────────────────
-      # 11. Summary
-      # ──────────────────────────────────────────
-      - name: 📊 Summary
-        run: |
-          echo "============================================="
-          echo "  ✅ Build Complete!"
-          echo "  📱 APK: $APK_ARTIFACT"
-          if [ -f "$APK_ARTIFACT" ]; then
-            echo "  📦 Size: $(du -h $APK_ARTIFACT | cut -f1)"
-          fi
-          echo "============================================="
